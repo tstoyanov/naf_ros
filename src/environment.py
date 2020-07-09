@@ -78,9 +78,9 @@ class ManipulateEnv(gym.Env):
                           dyn_params=['TDynPD', '1.0', '2.0'])
         rl_task = Task(name='ee_rl',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
-                          dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state', '/home/tsv/hiqp_logs/'])
+                          dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state', '/home/aass/hiqp_logs/'])
         redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
-                          def_params=['TDefFullPose', '0.1', '-0.3', '0.0'],
+                          def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
                           dyn_params=['TDynPD', '0.5', '1.5'])
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
@@ -122,7 +122,7 @@ class ManipulateEnv(gym.Env):
 
         #print('setting to home pose')
         joints = ['three_dof_planar_joint1','three_dof_planar_joint2','three_dof_planar_joint3']
-        self.effort_pub.publish(JointTrajectory(joint_names=joints,points=[JointTrajectoryPoint(positions=[0.1,-0.3,0.0],time_from_start=rospy.Duration(4.0))]))
+        self.effort_pub.publish(JointTrajectory(joint_names=joints,points=[JointTrajectoryPoint(positions=[0.3,-0.3,-0.25],time_from_start=rospy.Duration(4.0))]))
         time.sleep(4.5)
         #restart hiqp
         cs_load('hiqp_joint_effort_controller')
@@ -133,7 +133,7 @@ class ManipulateEnv(gym.Env):
         self.set_primitives()
         self.set_tasks()
         #self.pub.publish([0,0])
-        time.sleep(5.0)
+        time.sleep(1.0)
         #print("Now acting")
 
         return self.observation  # reward, done, info can't be included

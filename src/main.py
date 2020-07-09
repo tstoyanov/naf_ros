@@ -60,8 +60,6 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--greedy_steps', type=int, default=10, metavar='N',
-                        help='amount of times greedy goes (default: 10)')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=10.0, metavar='N',
@@ -170,8 +168,14 @@ def main():
             if done or total_numsteps % args.num_steps == 0:
                 break
 
+        print("Train Episode: {}, total numsteps: {}, reward: {}".format(i_episode, total_numsteps,
+                                                                         episode_reward))
+        train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
+        rewards.append(episode_reward)
+
+        #Training models
         if len(memory) >= args.batch_size and args.train_model:
-            env.reset()
+            #env.reset()
             #print("Training model")
 
             for _ in range(args.updates_per_step*args.num_steps):
@@ -183,14 +187,8 @@ def main():
                 #writer.add_scalar('loss/policy', policy_loss, updates)
 
                 updates += 1
-        #writer.add_scalar('reward/train', episode_reward, i_episode)
-        print("Train Episode: {}, total numsteps: {}, reward: {}".format(i_episode, total_numsteps,
-                                                                                       episode_reward))
-        train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
 
-        rewards.append(episode_reward)
-    
-    
+        #runing evaluation episode
         greedy_numsteps = 0
         if i_episode % 10 == 0:
             #state = env.reset()
