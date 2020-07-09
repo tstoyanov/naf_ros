@@ -29,14 +29,18 @@ class ManipulateEnv(gym.Env):
         self.observation_space = spaces.Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=np.float32)
 
         rospy.init_node('DRL_node', anonymous=True)
-        rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation)
-        self.pub = rospy.Publisher('/ee_rl/act', DesiredErrorDynamicsMsg)
-        self.effort_pub = rospy.Publisher('/position_joint_trajectory_controller/command', JointTrajectory)
+        #queue size = 1 only keeps most recent message
+        rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation, queue_size=1)
+        #queue_size = None forces synchronous publishing
+        self.pub = rospy.Publisher('/ee_rl/act', DesiredErrorDynamicsMsg, queue_size=None)
+        self.effort_pub = rospy.Publisher('/position_joint_trajectory_controller/command', JointTrajectory, queue_size=1)
         self.rate = rospy.Rate(10) #10Hz
         self.set_primitives()
         self.set_tasks()
         self.rate.sleep()
         time.sleep(1) #wait for ros to start up
+        #HOW ugly can you be?
+        self.fresh=False
 
     def set_scale(self,action_scale):
         self.action_scale = action_scale
@@ -60,37 +64,39 @@ class ManipulateEnv(gym.Env):
         #set the tasks to hiqp
         #print("setting tasks")
         hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_tasks', SetTasks)
-        cage_front = Task(name='ee_cage_front',priority=0,visible=True,active=True,monitored=True,
+        cage_front = Task(name='ee_cage_front',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < front_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_back = Task(name='ee_cage_back',priority=0,visible=True,active=True,monitored=True,
+        cage_back = Task(name='ee_cage_back',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point > back_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_left = Task(name='ee_cage_left',priority=0,visible=True,active=True,monitored=True,
+        cage_left = Task(name='ee_cage_left',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point > left_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_right = Task(name='ee_cage_right',priority=0,visible=True,active=True,monitored=True,
+        cage_right = Task(name='ee_cage_right',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < right_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        rl_task = Task(name='ee_rl',priority=1,visible=True,active=True,monitored=True,
+        rl_task = Task(name='ee_rl',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
                           dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state', '/home/aass/hiqp_logs/'])
-        redundancy = Task(name='full_pose',priority=2,visible=True,active=True,monitored=True,
-                          def_params=['TDefFullPose', '0.1', '-0.3', '0.0'],
+        redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
+                          def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
                           dyn_params=['TDynPD', '0.5', '1.5'])
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
     def _next_observation(self, data):
-        delta_x = self.goal[0] - data.e[0]
-        delta_y = self.goal[1] - data.e[1]
-        self.observation = np.array([delta_x, delta_y])
+        self.observation = data.e
+        self.fresh = True
 
     def step(self, action):
         # Execute one time step within the environment
         a = action.numpy()[0] * self.action_scale
         act_pub = [a[0], a[1]]
         self.pub.publish(act_pub)
-        self.rate.sleep()
+        self.fresh = False
+        while not self.fresh:
+            self.rate.sleep()
+
 
         reward, done, obs_hit = self.calc_shaped_reward()
         return self.observation, reward, done, obs_hit
@@ -116,7 +122,7 @@ class ManipulateEnv(gym.Env):
 
         #print('setting to home pose')
         joints = ['three_dof_planar_joint1','three_dof_planar_joint2','three_dof_planar_joint3']
-        self.effort_pub.publish(JointTrajectory(joint_names=joints,points=[JointTrajectoryPoint(positions=[0.1,-0.3,0.0],time_from_start=rospy.Duration(4.0))]))
+        self.effort_pub.publish(JointTrajectory(joint_names=joints,points=[JointTrajectoryPoint(positions=[0.3,-0.3,-0.25],time_from_start=rospy.Duration(4.0))]))
         time.sleep(4.5)
         #restart hiqp
         cs_load('hiqp_joint_effort_controller')
@@ -127,7 +133,7 @@ class ManipulateEnv(gym.Env):
         self.set_primitives()
         self.set_tasks()
         #self.pub.publish([0,0])
-        time.sleep(0.5)
+        time.sleep(1.0)
         #print("Now acting")
 
         return self.observation  # reward, done, info can't be included
@@ -139,7 +145,7 @@ class ManipulateEnv(gym.Env):
         pass
 
     def calc_dist(self):
-        dist = math.sqrt(self.observation[0] ** 2 + self.observation[1] ** 2)
+        dist = math.sqrt((self.observation[0]-self.goal[0]) ** 2 + (self.observation[1]-self.goal[1])  ** 2)
         return dist
 
     def calc_shaped_reward(self):
