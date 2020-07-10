@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
-
+import numpy
+import pickle
 #@profile
 def MSELoss(input, target):
     return torch.sum((input - target)**2) / input.data.nelement()
@@ -157,6 +158,37 @@ class NAF:
             model_path = "models/naf_{}_{}_{}_{}".format(env_name, batch_size, episode, suffix)
         print('Loading model from {}'.format(model_path))
         self.model.load_state_dict(torch.load(model_path))
+
+    # saves state value function as a pickle
+    # @sample_range is a tripplet with per-dimension min,max,and n_samples
+    def save_value_funct(self, base_name, episode, sample_range):
+        n_dim = len(sample_range[0])
+        axis_list = []
+        for j in range(n_dim):
+            di = torch.linspace(sample_range[0][j],sample_range[1][j],sample_range[2][j])
+            axis_list.append(di)
+        axis = tuple(axis_list)
+        mesh = torch.meshgrid(axis)
+        mesh = torch.stack(mesh,2)
+        mesh = torch.flatten(mesh,start_dim=0,end_dim=1)
+        #mesh = mesh.unsqueeze(0)
+
+        mu, _, V = self.model((Variable(mesh),None))
+        self.model.eval()
+
+        with open(base_name+"{}_val.pk".format(episode), 'wb') as output:
+            pickle.dump((mu,V),output)
+
+        #draw picture
+        Varray = V.detach().numpy()
+        Varray = numpy.reshape(Varray,sample_range[2])
+        cmap = plt.cm.viridis
+        cNorm = colors.Normalize(vmin=np.min(Varray), vmax=np.max(Varray))
+        scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
+        plt.imshow(Varray,cmap=cmap,norm=cNorm)
+        figname= base_name+"{}_val.png".format(episode)
+        plt.savefig(figname)
+        plt.close()
 
     def plot_path(self, state, action, ep):
         self.model.eval()

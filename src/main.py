@@ -106,12 +106,12 @@ def main():
 
     # -- load existing model --
     if args.load_agent:
-        agent.load_model(args.env_name, args.batch_size, args.num_episodes, '.pth')
+        agent.load_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step), model_path=args.logdir)
         print("agent: naf_{}_{}_{}_{}, is loaded".format(args.env_name, args.batch_size, args.num_episodes, '.pth'))
 
     # -- load experience buffer --
     if args.load_exp:
-        with open('/home/quantao/Workspaces/catkin_ws/src/panda_demos/naf_env/src/exp_replay.pk1', 'rb') as input:
+        with open(args.logdir+'/exp_buffer_sd{}_as{}_us_{}.pk'.format(args.seed,args.action_scale,args.updates_per_step), 'rb') as input:
             memory.memory = pickle.load(input)
             memory.position = len(memory)
 
@@ -176,7 +176,8 @@ def main():
         #Training models
         if len(memory) >= args.batch_size and args.train_model:
             #env.reset()
-            #print("Training model")
+            print("Training model")
+            env.step(torch.Tensor([[0,0]]))
 
             for _ in range(args.updates_per_step*args.num_steps):
                 transitions = memory.sample(args.batch_size)
@@ -219,12 +220,17 @@ def main():
 
             rewards.append(episode_reward)
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
+            agent.save_value_funct(
+                args.logdir + '/sd{}_as{}_us_{}'.format(args.seed, args.action_scale, args.updates_per_step), i_episode,
+                ([-1, -1], [1, 1], [240, 240]))
+
+
             
 
     #-- saves model --
     if args.save_agent:
-        agent.save_model(args.env_name, args.batch_size, args.num_episodes, '.pth')
-        with open('exp_replay.pk1', 'wb') as output:
+        agent.save_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step), model_path=args.logdir)
+        with open(args.logdir+'/exp_buffer_sd{}_as{}_us_{}.pk'.format(args.seed,args.action_scale,args.updates_per_step), 'wb') as output:
             pickle.dump(memory.memory, output, pickle.HIGHEST_PROTOCOL)
 
     print('Training ended after {} minutes'.format((time.time() - t_start)/60))

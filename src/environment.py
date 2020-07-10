@@ -133,7 +133,11 @@ class ManipulateEnv(gym.Env):
         self.set_primitives()
         self.set_tasks()
         #self.pub.publish([0,0])
-        time.sleep(1.0)
+        #wait for fresh state
+        self.fresh = False
+        while not self.fresh:
+            self.rate.sleep()
+
         #print("Now acting")
 
         return self.observation  # reward, done, info can't be included
