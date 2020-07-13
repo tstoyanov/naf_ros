@@ -176,7 +176,7 @@ class NAF:
         mu, _, V = self.model((Variable(mesh),None))
         self.model.eval()
 
-        with open(base_name+"{}_val.pk".format(episode), 'wb') as output:
+        with open(base_name+"_ep{}_val.pk".format(episode), 'wb') as output:
             pickle.dump((mu,V),output)
 
         #draw picture

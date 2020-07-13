@@ -83,11 +83,11 @@ def main():
     if not path.exists():
         raise argparse.ArgumentTypeError("Parameter {} is not a valid path".format(path))
 
-    csv_train = open(args.logdir+'/sd{}_as{}_us_{}_train.csv'.format(args.seed,args.action_scale,args.updates_per_step), 'w',
+    csv_train = open(args.logdir+'/kd{}_sd{}_as{}_us_{}_train.csv'.format(args.kd, args.seed,args.action_scale,args.updates_per_step), 'w',
               newline='')
     train_writer = csv.writer(csv_train, delimiter=' ')
 
-    csv_test = open(args.logdir+'/sd{}_as{}_us_{}_test.csv'.format(args.seed, args.action_scale, args.updates_per_step), 'w',
+    csv_test = open(args.logdir+'/kd{}_sd{}_as{}_us_{}_test.csv'.format(args.kd, args.seed, args.action_scale, args.updates_per_step), 'w',
                   newline='')
     test_writer = csv.writer(csv_test, delimiter=' ')
 
@@ -221,7 +221,7 @@ def main():
             rewards.append(episode_reward)
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
             agent.save_value_funct(
-                args.logdir + '/sd{}_as{}_us_{}'.format(args.seed, args.action_scale, args.updates_per_step), i_episode,
+                args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step), i_episode,
                 ([-1, -1], [1, 1], [240, 240]))
 
 
