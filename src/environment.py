@@ -109,9 +109,10 @@ class ManipulateEnv(gym.Env):
         cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)
         cs_unload = rospy.ServiceProxy('/controller_manager/unload_controller', UnloadController)
         cs_load = rospy.ServiceProxy('/controller_manager/load_controller', LoadController)
-        remove_tasks = rospy.ServiceProxy('/hiqp_joint_effort_controller/remove_tasks', RemoveTasks)
+        remove_tasks = rospy.ServiceProxy('/hiqp_joint_effort_controller/remove_all_tasks', RemoveAllTasks)
         #print('removing tasks')
-        remove_tasks(['ee_cage_back','ee_cage_left','ee_cage_right','ee_cage_front','ee_rl','full_pose'])
+        #remove_tasks(['ee_cage_back','ee_cage_left','ee_cage_right','ee_cage_front','ee_rl','full_pose'])
+        remove_tasks()
         #time.sleep(1)
 
         #stop hiqp

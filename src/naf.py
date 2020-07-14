@@ -182,10 +182,17 @@ class NAF:
         #draw picture
         Varray = V.detach().numpy()
         Varray = numpy.reshape(Varray,sample_range[2])
+
+        fig = plt.figure()
         cmap = plt.cm.viridis
         cNorm = colors.Normalize(vmin=np.min(Varray), vmax=np.max(Varray))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
-        plt.imshow(Varray,cmap=cmap,norm=cNorm)
+        grid = mesh.numpy()
+        plt.scatter(grid[:,0],grid[:,1],c=Varray)
+        plt.title("Value function at episode {}".format(episode))
+        plt.tight_layout()
+        plt.xlim((-1, 1))
+        plt.ylim((-1, 1))
         figname= base_name+"_ep{}_val.png".format(episode)
         plt.savefig(figname)
         plt.close()
