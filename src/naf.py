@@ -186,7 +186,7 @@ class NAF:
         cNorm = colors.Normalize(vmin=np.min(Varray), vmax=np.max(Varray))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
         plt.imshow(Varray,cmap=cmap,norm=cNorm)
-        figname= base_name+"{}_val.png".format(episode)
+        figname= base_name+"_ep{}_val.png".format(episode)
         plt.savefig(figname)
         plt.close()
 

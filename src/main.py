@@ -220,6 +220,7 @@ def main():
 
             rewards.append(episode_reward)
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
+            print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
             agent.save_value_funct(
                 args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step), i_episode,
                 ([-1, -1], [1, 1], [240, 240]))
@@ -229,7 +230,7 @@ def main():
 
     #-- saves model --
     if args.save_agent:
-        agent.save_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step), model_path=args.logdir)
+        agent.save_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step))
         with open(args.logdir+'/exp_buffer_sd{}_as{}_us_{}.pk'.format(args.seed,args.action_scale,args.updates_per_step), 'wb') as output:
             pickle.dump(memory.memory, output, pickle.HIGHEST_PROTOCOL)
 
