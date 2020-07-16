@@ -8,6 +8,8 @@ import gym
 from gym import spaces
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+import csv
 
 from controller_manager_msgs.srv import *
 from std_msgs.msg import *
@@ -22,11 +24,13 @@ class ManipulateEnv(gym.Env):
         super(ManipulateEnv, self).__init__()
 
         self.goal = [-0.2, -0.5]
-        
+
+        #These seem to be here for the enjoyment of the reader only, what are theyused for?
         self.action_space = spaces.Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=np.float32)
+        self.observation_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
+
         self.action_scale = 10
         self.kd = 10
-        self.observation_space = spaces.Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=np.float32)
 
         rospy.init_node('DRL_node', anonymous=True)
         #queue size = 1 only keeps most recent message
@@ -41,6 +45,9 @@ class ManipulateEnv(gym.Env):
         time.sleep(1) #wait for ros to start up
         #HOW ugly can you be?
         self.fresh=False
+
+        csv_train = open("/home/tsv/hiqp_logs/constraints.csv", 'w', newline='')
+        self.twriter = csv.writer(csv_train, delimiter=' ')
 
     def set_scale(self,action_scale):
         self.action_scale = action_scale
@@ -78,7 +85,7 @@ class ManipulateEnv(gym.Env):
                           dyn_params=['TDynPD', '1.0', '2.0'])
         rl_task = Task(name='ee_rl',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
-                          dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state', '/home/aass/hiqp_logs/'])
+                          dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state']) #, '/home/aass/hiqp_logs/'
         redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
                           def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
                           dyn_params=['TDynPD', '0.5', '1.5'])
@@ -86,13 +93,20 @@ class ManipulateEnv(gym.Env):
 
     def _next_observation(self, data):
         self.observation = data.e
+        self.de = data.de
+        self.J = np.transpose(np.reshape(np.array(data.J_lower),[data.n_joints,data.n_constraints_lower]))
+        self.A = np.transpose(np.reshape(np.array(data.J_upper),[data.n_joints,data.n_constraints_upper]))
+        self.b = np.reshape(np.array(data.b_upper),[data.n_constraints_upper,1])
+        self.rhs = np.reshape(np.array(data.rhs_fixed_term),[data.n_constraints_lower,1])
+        self.q = np.reshape(np.array(data.q),[data.n_joints,1])
+        self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.fresh = True
 
     def step(self, action):
         # Execute one time step within the environment
         a = action.numpy()[0] * self.action_scale
-        act_pub = [a[0], a[1]]
-        self.pub.publish(act_pub)
+        #act_pub = [a[0], a[1]]
+        self.pub.publish(a)
         self.fresh = False
         while not self.fresh:
             self.rate.sleep()
@@ -144,13 +158,33 @@ class ManipulateEnv(gym.Env):
         return self.observation  # reward, done, info can't be included
          
     def render(self, mode='human'):
-        pass
+        self.twriter.writerow(self.A.tolist())
+        self.twriter.writerow(self.J.tolist())
+        self.twriter.writerow(self.b.tolist())
+        #a feasible point that is the least-squares solution
+        feasible_point = self.J.dot(np.linalg.pinv(self.A).dot(self.b))
+        #iterating through all higher-level constraints
+        n_jnts = np.shape(self.A[1])[0]
+        for i in range(np.shape(self.A)[0]):
+            row = self.A[i,:]
+            #pseudoinverse of a matrix with linearly independent rows is A'*(AA')^-1
+            pinv_row = np.reshape(np.transpose(row)/(row.dot(np.transpose(row))),[1,n_jnts])
+            #point on the constraint
+            bi = np.asscalar(self.b[i])
+            point = self.J.dot(np.transpose(bi*pinv_row))
+            #nullspace projection of constraint
+            Proj = np.identity(n_jnts) - np.multiply(np.transpose(np.repeat(pinv_row,n_jnts,axis=0)),row)
+            U,S,V = np.linalg.svd(self.J.dot(Proj))
+            normal = np.asscalar(np.sign(U[:,1].dot(feasible_point-point)))*U[:,1]
+            normal = normal/np.linalg.norm(normal)
+            self.twriter.writerow(point.tolist())
+            self.twriter.writerow(normal.tolist())
 
     def close (self):
         pass
 
     def calc_dist(self):
-        dist = math.sqrt((self.observation[0]-self.goal[0]) ** 2 + (self.observation[1]-self.goal[1])  ** 2)
+        dist = np.linalg.norm(np.array(self.observation[0:2])-np.array(self.goal)) #   math.sqrt((self.observation[0]-self.goal[0]) ** 2 + (self.observation[1]-self.goal[1])  ** 2)
         return dist
 
     def calc_shaped_reward(self):

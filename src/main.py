@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--tau', type=float, default=0.001,
                         help='discount factor for model (default: 0.001)')
     parser.add_argument('--ou_noise', type=bool, default=True)
-    parser.add_argument('--noise_scale', type=float, default=0.4, metavar='G',
+    parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
                         help='initial noise scale (default: 0.4)')
     parser.add_argument('--final_noise_scale', type=float, default=0.05, metavar='G',
                         help='final noise scale (default: 0.05)')
@@ -40,7 +40,7 @@ def main():
                         help='number of episodes with noise (default: 100)')
     parser.add_argument('--seed', type=int, default=4, metavar='N',
                         help='random seed (default: 4)')
-    parser.add_argument('--batch_size', type=int, default=512, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='batch size (default: 512)')
     parser.add_argument('--num_steps', type=int, default=100, metavar='N',
                         help='max episode length (default: 300)')
@@ -48,7 +48,7 @@ def main():
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=5, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -62,9 +62,9 @@ def main():
                         help='load saved experience')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
-    parser.add_argument('--action_scale', type=float, default=10.0, metavar='N',
+    parser.add_argument('--action_scale', type=float, default=100.0, metavar='N',
                         help='scale applied to the normalized actions (default: 10)')
-    parser.add_argument('--kd', type=float, default=10.0, metavar='N',
+    parser.add_argument('--kd', type=float, default=1.0, metavar='N',
                         help='derivative gain for ee_rl (default: 10)')
 
     args = parser.parse_args()
@@ -189,6 +189,10 @@ def main():
 
                 updates += 1
 
+        agent.save_value_funct(
+            args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
+            i_episode,
+            ([-3.0, -3.0], [3.0, 3.0], [600, 600]))
         #runing evaluation episode
         greedy_numsteps = 0
         if i_episode % 10 == 0:
@@ -221,9 +225,6 @@ def main():
             rewards.append(episode_reward)
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
             print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
-            agent.save_value_funct(
-                args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step), i_episode,
-                ([-1, -1], [1, 1], [240, 240]))
 
 
             

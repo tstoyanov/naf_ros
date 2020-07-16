@@ -173,11 +173,12 @@ class NAF:
         mesh = torch.flatten(mesh,start_dim=0,end_dim=1)
         #mesh = mesh.unsqueeze(0)
 
-        mu, _, V = self.model((Variable(mesh),None))
         self.model.eval()
+        mu, _, V = self.model((Variable(mesh),None))
+        self.model.train()
 
-        with open(base_name+"_ep{}_val.pk".format(episode), 'wb') as output:
-            pickle.dump((mu,V),output)
+#        with open(base_name+"_ep{}_val.pk".format(episode), 'wb') as output:
+#            pickle.dump((mu,V),output)
 
         #draw picture
         Varray = V.detach().numpy()
@@ -187,12 +188,15 @@ class NAF:
         cmap = plt.cm.viridis
         cNorm = colors.Normalize(vmin=np.min(Varray), vmax=np.max(Varray))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
+        plt.plot(-0.2,-0.5,'ro')
+        plt.plot([-0.8,0.8,0.8,-0.8,-0.8],[-0.8,-0.8,0.8,0.8,-0.8],'b-',linewidth=2)
         grid = mesh.numpy()
         plt.scatter(grid[:,0],grid[:,1],c=Varray)
         plt.title("Value function at episode {}".format(episode))
+        plt.colorbar()
         plt.tight_layout()
-        plt.xlim((-1, 1))
-        plt.ylim((-1, 1))
+        plt.xlim((sample_range[0][0], sample_range[1][0]))
+        plt.ylim((sample_range[0][1], sample_range[1][1]))
         figname= base_name+"_ep{}_val.png".format(episode)
         plt.savefig(figname)
         plt.close()

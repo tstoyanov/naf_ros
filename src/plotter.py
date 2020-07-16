@@ -116,10 +116,10 @@ parser.add_argument('--logdir', default="",
                     help='directory where to dump log files')
 args = parser.parse_args()
 
-seeds = [2341]
-kds = [0.0] #,1.0,10.0,100.0]
+seeds = [4]
+kds = [1.0] #,1.0,10.0,100.0]
 ascales = [100.0]
-uscales = [10,50]
+uscales = [1]
 
 means = parse_csvs(args.logdir,seeds,kds,ascales,uscales)
 plot_means(means)
