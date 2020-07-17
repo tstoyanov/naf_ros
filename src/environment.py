@@ -17,6 +17,8 @@ from hiqp_msgs.srv import *
 from hiqp_msgs.msg import *
 from trajectory_msgs.msg import *
 
+from halfspaces import qhull
+
 class ManipulateEnv(gym.Env):
     """Manipulation Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
@@ -48,6 +50,7 @@ class ManipulateEnv(gym.Env):
 
         csv_train = open("/home/tsv/hiqp_logs/constraints.csv", 'w', newline='')
         self.twriter = csv.writer(csv_train, delimiter=' ')
+        self.episode_trace = []
 
     def set_scale(self,action_scale):
         self.action_scale = action_scale
@@ -103,6 +106,11 @@ class ManipulateEnv(gym.Env):
         self.fresh = True
 
     def step(self, action):
+        success, Ax, bx = qhull(self.A,self.J,self.b)
+        if(success) :
+            bx = bx - Ax.dot(self.rhs).transpose()
+            self.episode_trace.append((Ax,bx))
+
         # Execute one time step within the environment
         a = action.numpy()[0] * self.action_scale
         #act_pub = [a[0], a[1]]
@@ -112,10 +120,11 @@ class ManipulateEnv(gym.Env):
             self.rate.sleep()
 
 
-        reward, done, obs_hit = self.calc_shaped_reward()
-        return self.observation, reward, done, obs_hit
+        reward, done = self.calc_shaped_reward()
+        return self.observation, reward, done, Ax, bx
 
     def reset(self):
+        self.episode_trace.clear()
         # Reset the state of the environment to an initial state
         # subprocess.call("~/Workspaces/catkin_ws/src/panda_demos/panda_table_launch/scripts/sim_reset_episode_fast.sh", shell=True)
 
@@ -158,27 +167,11 @@ class ManipulateEnv(gym.Env):
         return self.observation  # reward, done, info can't be included
          
     def render(self, mode='human'):
-        self.twriter.writerow(self.A.tolist())
-        self.twriter.writerow(self.J.tolist())
-        self.twriter.writerow(self.b.tolist())
-        #a feasible point that is the least-squares solution
-        feasible_point = self.J.dot(np.linalg.pinv(self.A).dot(self.b))
-        #iterating through all higher-level constraints
-        n_jnts = np.shape(self.A[1])[0]
-        for i in range(np.shape(self.A)[0]):
-            row = self.A[i,:]
-            #pseudoinverse of a matrix with linearly independent rows is A'*(AA')^-1
-            pinv_row = np.reshape(np.transpose(row)/(row.dot(np.transpose(row))),[1,n_jnts])
-            #point on the constraint
-            bi = np.asscalar(self.b[i])
-            point = self.J.dot(np.transpose(bi*pinv_row))
-            #nullspace projection of constraint
-            Proj = np.identity(n_jnts) - np.multiply(np.transpose(np.repeat(pinv_row,n_jnts,axis=0)),row)
-            U,S,V = np.linalg.svd(self.J.dot(Proj))
-            normal = np.asscalar(np.sign(U[:,1].dot(feasible_point-point)))*U[:,1]
-            normal = normal/np.linalg.norm(normal)
-            self.twriter.writerow(point.tolist())
-            self.twriter.writerow(normal.tolist())
+        qhull(self.A,self.J,self.b)
+
+        #self.twriter.writerow(self.A.tolist())
+        #self.twriter.writerow(self.J.tolist())
+        #self.twriter.writerow(self.b.tolist())
 
     def close (self):
         pass
@@ -190,7 +183,6 @@ class ManipulateEnv(gym.Env):
     def calc_shaped_reward(self):
         reward = 0
         done = False
-        obs_hit = False
 
         dist = self.calc_dist()
 
@@ -201,5 +193,5 @@ class ManipulateEnv(gym.Env):
         else:
             reward += -10*dist
 
-        return reward, done, obs_hit
+        return reward, done
         

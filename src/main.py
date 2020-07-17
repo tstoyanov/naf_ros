@@ -140,8 +140,8 @@ def main():
         while True:
             # -- action selection, observation and store transition --
             action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
-            
-            next_state, reward, done, info = env.step(action)
+
+            next_state, reward, done, Ax, bx = env.step(action)
 
             visits = np.concatenate((visits,state.numpy(),args.action_scale*action,[reward]),axis=None)
             #env.render()
@@ -152,9 +152,11 @@ def main():
             mask = torch.Tensor([not done])
             reward = torch.Tensor([reward])
             next_state = torch.Tensor([next_state])
+            Ax = torch.Tensor(Ax)
+            bx = torch.Tensor(bx)
 
             #print('reward:', reward)
-            memory.push(state, action, mask, next_state, reward)
+            memory.push(state, action, mask, next_state, reward, Ax, bx)
 
             state = next_state
 
@@ -172,6 +174,19 @@ def main():
                                                                          episode_reward))
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
         rewards.append(episode_reward)
+
+#        print("rendering episode constraints")
+#        fig = plt.figure()
+#        ax = fig.add_subplot(1, 1, 1, aspect='equal')
+#        xlim, ylim = (-5, 5), (-5, 5)
+#        for hs in env.episode_trace:
+#           ax.cla()
+#           x, y = zip(*hs.intersections)
+#           ax.plot(x, y, 'ro', markersize=8)
+#           ax.set_xlim(xlim)
+#           ax.set_ylim(ylim)
+#           plt.pause(0.1)
+#       plt.close()
 
         #Training models
         if len(memory) >= args.batch_size and args.train_model:
@@ -204,7 +219,7 @@ def main():
             while True:
                 action = agent.select_action(state)
         
-                next_state, reward, done, info = env.step(action)
+                next_state, reward, done, Ax, bx = env.step(action)
                 visits = np.concatenate((visits, state.numpy(), action, [reward]), axis=None)
                 episode_reward += reward
                 greedy_numsteps += 1
