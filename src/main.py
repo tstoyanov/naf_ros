@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import argparse
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import time
@@ -10,7 +9,7 @@ import matplotlib.cm as cmx
 import gym
 from torch.autograd import Variable
 #get rid of that horrible plotter
-#from tensorboardX import SummaryWriter
+from tensorboardX import SummaryWriter
 
 from pathlib import Path
 import csv
@@ -48,7 +47,7 @@ def main():
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=50, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -77,7 +76,7 @@ def main():
     else:
         env = gym.make(args.env_name)
 
-    #writer = SummaryWriter('runs/')
+    writer = SummaryWriter(args.logdir+'/runs/')
 
     path = Path(args.logdir)
     if not path.exists():
@@ -197,10 +196,11 @@ def main():
             for _ in range(args.updates_per_step*args.num_steps):
                 transitions = memory.sample(args.batch_size)
                 batch = Transition(*zip(*transitions))
-                value_loss, policy_loss = agent.update_parameters(batch)
+                value_loss, reg_loss = agent.update_parameters(batch)
 
-                #writer.add_scalar('loss/value', value_loss, updates)
-                #writer.add_scalar('loss/policy', policy_loss, updates)
+                writer.add_scalar('loss/full', value_loss, updates)
+                writer.add_scalar('loss/value', value_loss-reg_loss, updates)
+                writer.add_scalar('loss/regularizer', reg_loss, updates)
 
                 updates += 1
 
@@ -234,7 +234,7 @@ def main():
                 if done or greedy_numsteps % args.num_steps == 0:
                     break
                 
-            #writer.add_scalar('reward/test', episode_reward, i_episode)
+            writer.add_scalar('reward/test', episode_reward, i_episode)
             test_writer.writerow(np.concatenate(([episode_reward], visits), axis=None))
 
             rewards.append(episode_reward)

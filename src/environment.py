@@ -8,7 +8,6 @@ import gym
 from gym import spaces
 import numpy as np
 import time
-import matplotlib.pyplot as plt
 import csv
 
 from controller_manager_msgs.srv import *
@@ -106,7 +105,7 @@ class ManipulateEnv(gym.Env):
         self.fresh = True
 
     def step(self, action):
-        success, Ax, bx = qhull(self.A,self.J,self.b)
+        success, Ax, bx = qhull(self.A,self.J,self.b,do_simple_processing=False)
         if(success) :
             bx = bx - Ax.dot(self.rhs).transpose()
             self.episode_trace.append((Ax,bx))

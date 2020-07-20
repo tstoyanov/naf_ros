@@ -1,7 +1,7 @@
 import random
 from collections import namedtuple
 
-Transition = namedtuple('Transition', ('state', 'action', 'mask', 'next_state', 'reward', 'A', 'b'))
+Transition = namedtuple('Transition', ('state', 'action', 'mask', 'next_state', 'reward', 'Ax', 'bx'))
 
 class ReplayMemory(object):
 

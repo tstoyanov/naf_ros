@@ -5,6 +5,10 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.autograd import Variable
 import numpy as np
+
+#this should prevent matplotlib to open windows
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
@@ -13,6 +17,15 @@ import pickle
 #@profile
 def MSELoss(input, target):
     return torch.sum((input - target)**2) / input.data.nelement()
+
+def RegLoss(means,Ax_batch,bx_batch):
+    #note this is not done in parallel. In general, the number of constraints can varry, so Ax and bx cannot be trivially stacked
+    #suggestions for improvement welcome
+    #computes 1/n sum \lambda^T(A_ix\mu - b_i) for \lmbda = ones*factor
+    factor=0.001
+    r = torch.nn.ReLU()
+    return factor*torch.sum(r(torch.stack([torch.sum(torch.mm(Ax_batch[i], 100*means[i, :].reshape([2, 1])) - bx_batch[i])
+                                  for i in range(len(Ax_batch))]))) / len(Ax_batch)
 
 #@profile
 def soft_update(target, source, tau):
@@ -131,9 +144,11 @@ class NAF:
 
         expected_state_action_values = reward_batch + (self.gamma * mask_batch * next_state_values)
 
-        _, state_action_values, _ = self.model((state_batch, action_batch))
+        means, state_action_values, _ = self.model((state_batch, action_batch))
 
         loss = MSELoss(state_action_values, expected_state_action_values)
+        regularizer_loss = RegLoss(means,batch.Ax,batch.bx)
+        loss = loss + regularizer_loss
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -142,7 +157,7 @@ class NAF:
 
         soft_update(self.target_model, self.model, self.tau)
 
-        return loss.item(), 0
+        return loss.item(), regularizer_loss.item()
 
     def save_model(self, env_name, batch_size, episode, suffix="", model_path=None):
         if not os.path.exists('models/'):

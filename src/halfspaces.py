@@ -2,6 +2,9 @@ import numpy as np
 from scipy.spatial import HalfspaceIntersection
 from scipy.spatial import ConvexHull
 from scipy.optimize import linprog
+#this should prevent matplotlib to open windows
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
@@ -56,16 +59,17 @@ def plot_halfspace_2d(halfspaces,hs,feasible,signs):
         plt.plot(line[:,0],line[:,1],'r-d')
     #plt.plot(hs.dual_points[:,0],hs.dual_points[:,1], 'rx')
     plt.show()
-    #   plt.pause(0.01)
 
 
-def qhull(A,J,b):
+def qhull(A,J,b,do_simple_processing=True):
     n_jnts = np.shape(A[1])[0]
     n_constraints = np.shape(A)[0]
     n_action_dim = np.shape(J)[0]
     halfspaces = np.zeros((n_constraints,n_action_dim+1))
 
     Ax = np.zeros((1, n_action_dim))
+    # maybe this makes more sense? weare in an infeasible case, we want action=0
+    #Ax = np.ones((1, n_action_dim))
     bx = np.zeros(1)
 
     norm_vector = np.reshape(np.linalg.norm(A, axis=1),(n_constraints, 1))
@@ -109,6 +113,11 @@ def qhull(A,J,b):
     b_lower = - halfspaces[:, -1:]
     res = linprog(c, A_ub=A_lower, b_ub=b_lower, bounds=(None, None))
     if (res.success):
+        if(do_simple_processing):
+            Ax = halfspaces[:, :-1]
+            bx = -halfspaces[:, -1:]
+            return True, Ax, bx.transpose()
+
         feasible_point_2 = np.array([res.x[0], res.x[1]])
         hs = HalfspaceIntersection(halfspaces, feasible_point_2)
 
@@ -150,7 +159,7 @@ def main():
         [0.798264,   0.493044,   0.193992]])
     b= np.array([-1.2685100,  -1.5982600,  -2.0,  -1.1851000,  -0.3314850])
 
-    qhull(J_up,J_low,b)
+    qhull(J_up,J_low,b,do_simple_processing=False)
 
 #    halfspaces = np.array([[-1, 0., 1.5],
 #                           [0., -1., 0.],
