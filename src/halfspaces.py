@@ -4,7 +4,7 @@ from scipy.spatial import ConvexHull
 from scipy.optimize import linprog
 #this should prevent matplotlib to open windows
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
@@ -39,6 +39,10 @@ def plot_halfspace_2d(halfspaces,hs,feasible,signs):
     circle = Circle(x, radius=y, alpha=0.3)
     ax.add_patch(circle)
     plt.legend(bbox_to_anchor=(1.6, 1.0))
+
+    for i in range(np.shape(halfspaces)[0]):
+        plt.plot([0,halfspaces[i,0]],[0,halfspaces[i,1]],'g-o')
+
     hull = ConvexHull(hs.intersections)
 
     vlist = np.append(hull.vertices,hull.vertices[0])
@@ -52,10 +56,10 @@ def plot_halfspace_2d(halfspaces,hs,feasible,signs):
         vec = b-a #hs.intersections[simplex[1],:] - hs.intersections[simplex[0],:]
         normal = np.array([-vec[1],vec[0]])
         normal = normal/np.linalg.norm(normal)
-        Ax[i,:] = normal
+        Ax[i,:] = -normal
         bx[i] = normal.dot(a)
 
-        line = np.array([a,a+normal])
+        line = np.array([a,a-normal])
         plt.plot(line[:,0],line[:,1],'r-d')
     #plt.plot(hs.dual_points[:,0],hs.dual_points[:,1], 'rx')
     plt.show()
@@ -75,13 +79,15 @@ def qhull(A,J,b,do_simple_processing=True):
     norm_vector = np.reshape(np.linalg.norm(A, axis=1),(n_constraints, 1))
     c = np.zeros((n_jnts+1,))
     c[-1] = -1
-    A_up = np.hstack((-A, norm_vector))
-    b_up = b
+    A_up = np.hstack((A, norm_vector))
+    b_up = -b
+    b = -b
     # a feasible point that is the least-squares solution
     #feasible_point = J.dot(np.linalg.pinv(A).dot(b))
 
     second_feasible = linprog(c,A_ub=A_up, b_ub=b_up, bounds=(None, None))
     if(second_feasible.success):
+        check = A.dot(second_feasible.x[:-1]) + b #should be < 0
         feasible_point = J.dot(second_feasible.x[:-1])
     else:
         print("infeasible (upper)")
@@ -115,7 +121,7 @@ def qhull(A,J,b,do_simple_processing=True):
     if (res.success):
         if(do_simple_processing):
             Ax = halfspaces[:, :-1]
-            bx = -halfspaces[:, -1:]
+            bx = halfspaces[:, -1:]
             return True, Ax, bx.transpose()
 
         feasible_point_2 = np.array([res.x[0], res.x[1]])
@@ -135,7 +141,7 @@ def qhull(A,J,b,do_simple_processing=True):
             vec = b - a  # hs.intersections[simplex[1],:] - hs.intersections[simplex[0],:]
             normal = np.array([-vec[1], vec[0]])
             normal = -normal / np.linalg.norm(normal)
-            Ax[i, :] = normal
+            Ax[i, :] = -normal
             bx[i] = normal.dot(a)
 
         #just for fun, let's check feasible point
@@ -157,7 +163,7 @@ def main():
 #        [0.0,0.0,-1.0]])
     J_low = np.array([[-0.468515,-0.072484,-0.048653],
         [0.798264,   0.493044,   0.193992]])
-    b= np.array([-1.2685100,  -1.5982600,  -2.0,  -1.1851000,  -0.3314850])
+    b= np.array([-1.2685100,  -1.5982600,  -0.00173,  -1.1851000,  -0.3314850])
 
     qhull(J_up,J_low,b,do_simple_processing=False)
 
