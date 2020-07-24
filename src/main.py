@@ -20,7 +20,7 @@ from ounoise import OUNoise
 from replay_memory import Transition, ReplayMemory
 from environment import ManipulateEnv
 
-
+import quad
 
 def main():
     parser = argparse.ArgumentParser(description='NAF nullspace learner')
@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--ou_noise', type=bool, default=True)
     parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
                         help='initial noise scale (default: 0.4)')
-    parser.add_argument('--final_noise_scale', type=float, default=0.05, metavar='G',
+    parser.add_argument('--final_noise_scale', type=float, default=0.2, metavar='G',
                         help='final noise scale (default: 0.05)')
     parser.add_argument('--exploration_end', type=int, default=85, metavar='N',
                         help='number of episodes with noise (default: 100)')
@@ -47,7 +47,7 @@ def main():
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=20, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -61,9 +61,9 @@ def main():
                         help='load saved experience')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
-    parser.add_argument('--action_scale', type=float, default=100.0, metavar='N',
+    parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
                         help='scale applied to the normalized actions (default: 10)')
-    parser.add_argument('--kd', type=float, default=1.0, metavar='N',
+    parser.add_argument('--kd', type=float, default=0.0, metavar='N',
                         help='derivative gain for ee_rl (default: 10)')
 
     args = parser.parse_args()
@@ -125,7 +125,6 @@ def main():
 
     for i_episode in range(args.num_episodes+1):
         # -- reset environment for every episode --
-        #state = env.reset()
         state = torch.Tensor([env.reset()])
 
         # -- initialize noise (random process N) --
@@ -136,9 +135,13 @@ def main():
 
         episode_reward = 0
         visits = []
+        Ax_prev = np.identity(env.action_space.shape[0])
+        bx_prev = env.action_space.high
+
         while True:
             # -- action selection, observation and store transition --
             action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
+            action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
 
             next_state, reward, done, Ax, bx = env.step(action)
 
@@ -151,11 +154,14 @@ def main():
             mask = torch.Tensor([not done])
             reward = torch.Tensor([reward])
             next_state = torch.Tensor([next_state])
-            Ax = torch.Tensor(Ax)
-            bx = torch.Tensor(bx)
+            Ax_trace = torch.Tensor(Ax_prev)
+            bx_trace = torch.Tensor([bx_prev])
+
+            Ax_prev = Ax
+            bx_prev = bx[0]
 
             #print('reward:', reward)
-            memory.push(state, action, mask, next_state, reward, Ax, bx)
+            memory.push(state, action, mask, next_state, reward, Ax_trace, bx_trace)
 
             state = next_state
 
@@ -171,6 +177,8 @@ def main():
 
         print("Train Episode: {}, total numsteps: {}, reward: {}".format(i_episode, total_numsteps,
                                                                          episode_reward))
+        print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
+
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
         rewards.append(episode_reward)
 
@@ -240,6 +248,7 @@ def main():
             rewards.append(episode_reward)
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
             print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
+            print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
 
             

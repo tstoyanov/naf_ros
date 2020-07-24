@@ -53,6 +53,7 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
             for action_scale in action_scales:
                 for update_step in update_steps:
                     visited_states_training=numpy.array([])
+                    actions_training=numpy.array([])
                     rewards_training_step = numpy.array([])
                     rewards_training = []
                     rewards_testing = []
@@ -64,6 +65,7 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                             rewards_training.append(reward)
                             visit = numpy.reshape(row,[len(row)//5,5])
                             visited_states_training = numpy.append(visited_states_training,visit[:,0:2])
+                            actions_training = numpy.append(actions_training,visit[:,2:4])
                             rewards_training_step = numpy.append(rewards_training_step,visit[:,4])
 
                     with open(logdir+'/kd{}_sd{}_as{}_us_{}_test.csv'.format(kd,seed,action_scale,update_step), newline='') as test_csv:
@@ -75,9 +77,14 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                             eval_traces.append(visit[:,0:2])
 
                     visited_states_training = numpy.reshape(visited_states_training,[len(visited_states_training)//2,2])
+                    actions_training = numpy.reshape(actions_training,[len(actions_training)//2,2])
                     #test_series = genfromtxt(logdir+'/kd{}_sd{}_as{}_us_{}_test.csv'.format(kd,seed,action_scale,update_step),usecols=(0))
                     my_name="kd={},as={},us={},s={}".format(kd,action_scale,update_step,seed)
                     mean_dict[my_name] = rewards_testing
+
+                    cmap = plt.cm.viridis
+                    cNorm = colors.Normalize(vmin=numpy.min(rewards_training_step), vmax=numpy.max(rewards_training_step))
+                    scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
 
                     #plot visited states
                     fig = plt.figure()
@@ -87,10 +94,22 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                     plt.tight_layout()
                     plt.xlim((-1,1))
                     plt.ylim((-1,1))
-#                    plt.show()
+                    plt.show()
                     figname= logdir+"/"+my_name+'_train_visits.png'
                     plt.savefig(figname)
                     plt.close()
+
+                    fig3 = plt.figure()
+                    for i in range(numpy.shape(actions_training)[0]):
+                        colorVal = scalarMap.to_rgba(rewards_training_step[i])
+                        plt.arrow(visited_states_training[i,0], visited_states_training[i,1], actions_training[i,0],
+                                  actions_training[i,1], fc=colorVal, ec=colorVal, head_width=0.004,head_length=0.008)
+
+                    plt.title("Visited States (training) " + my_name)
+                    plt.tight_layout()
+                    plt.xlim((-1, 1))
+                    plt.ylim((-1, 1))
+                    plt.show()
 
                     #plot evaluation trajectories
                     fig2 = plt.figure()
@@ -103,7 +122,7 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                     plt.tight_layout()
                     plt.xlim((-1,1))
                     plt.ylim((-1, 1))
-                    #plt.show()
+                    plt.show()
                     figname = logdir + "/" + my_name + '_eval_visits.png'
                     plt.savefig(figname)
                     plt.close()
@@ -117,9 +136,9 @@ parser.add_argument('--logdir', default="",
 args = parser.parse_args()
 
 seeds = [4]
-kds = [1.0] #,1.0,10.0,100.0]
-ascales = [100.0]
-uscales = [1]
+kds = [0.0] #,1.0,10.0,100.0]
+ascales = [1.0]
+uscales = [10]
 
 means = parse_csvs(args.logdir,seeds,kds,ascales,uscales)
 plot_means(means)

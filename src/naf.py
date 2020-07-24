@@ -22,10 +22,10 @@ def RegLoss(means,Ax_batch,bx_batch):
     #note this is not done in parallel. In general, the number of constraints can varry, so Ax and bx cannot be trivially stacked
     #suggestions for improvement welcome
     #computes 1/n sum \lambda^T(A_ix\mu - b_i) for \lmbda = ones*factor
-    factor=0.1
+    factor=10.0
     r = torch.nn.ReLU()
-    return factor*torch.sum(r(torch.stack([torch.sum(torch.mm(Ax_batch[i], 100*means[i, :].reshape([2, 1])) - bx_batch[i])
-                                  for i in range(len(Ax_batch))]))) / len(Ax_batch)
+    return factor*torch.sum(torch.stack([torch.sum(r(torch.mm(Ax_batch[i], means[i, :].reshape([2, 1])) - bx_batch[i]))
+                                  for i in range(len(Ax_batch))])) / len(Ax_batch)
 
 #@profile
 def soft_update(target, source, tau):

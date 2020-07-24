@@ -7,7 +7,7 @@ import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
-
+import quad
 
 def plot_halfspace_2d(halfspaces,hs,feasible,signs):
     fig = plt.figure()
@@ -72,45 +72,43 @@ def qhull(A,J,b,do_simple_processing=True):
     halfspaces = np.zeros((n_constraints,n_action_dim+1))
 
     Ax = np.zeros((1, n_action_dim))
-    # maybe this makes more sense? weare in an infeasible case, we want action=0
-    #Ax = np.ones((1, n_action_dim))
     bx = np.zeros(1)
 
     norm_vector = np.reshape(np.linalg.norm(A, axis=1),(n_constraints, 1))
     c = np.zeros((n_jnts+1,))
     c[-1] = -1
     A_up = np.hstack((A, norm_vector))
-    b_up = -b
-    b = -b
-    # a feasible point that is the least-squares solution
-    #feasible_point = J.dot(np.linalg.pinv(A).dot(b))
+    # a feasible point that is furthest from constraints solution
+    second_feasible = linprog(c,A_ub=A_up, b_ub=b, bounds=(None, None))
 
-    second_feasible = linprog(c,A_ub=A_up, b_ub=b_up, bounds=(None, None))
     if(second_feasible.success):
-        check = A.dot(second_feasible.x[:-1]) + b #should be < 0
+        #check = A.dot(second_feasible.x[:-1]) - b #should be < 0
         feasible_point = J.dot(second_feasible.x[:-1])
     else:
         print("infeasible (upper)")
         return False, Ax, bx
 
-    signs = [] #for plotting
     # iterating through all higher-level constraints
     for i in range(n_constraints):
         row = A[i, :]
         # pseudoinverse of a matrix with linearly independent rows is A'*(AA')^-1
         pinv_row = np.reshape(np.transpose(row) / (row.dot(np.transpose(row))), [1, n_jnts])
         # point on the constraint
-        bi = b[i].item() #np.asscalar(b[i])
+        bi = b[i].item()
         point = J.dot(np.transpose(bi * pinv_row))
         # nullspace projection of constraint
         Proj = np.identity(n_jnts) - np.multiply(np.transpose(np.repeat(pinv_row, n_jnts, axis=0)), row)
         U, S, V = np.linalg.svd(J.dot(Proj))
         dot = U[:, 1].dot(feasible_point - np.reshape(point,np.shape(feasible_point)))
-        normal = np.sign(dot).item() * U[:, 1]
+        normal = -np.sign(dot).item() * U[:, 1]
         normal = normal / np.linalg.norm(normal)
-        halfspaces[i,0:n_action_dim] = -normal
+        halfspaces[i,0:n_action_dim] = normal
         halfspaces[i,-1] = normal.dot(point)
-        signs.append(int(-1*(normal.dot(np.ones(2)).item()<0)))
+
+    if (do_simple_processing):
+        Ax = -halfspaces[:, :-1]
+        bx = halfspaces[:, -1:]
+        return True, Ax, bx.transpose()
 
     norm_vector = np.reshape(np.linalg.norm(halfspaces[:, :-1], axis=1),(halfspaces.shape[0], 1))
     c = np.zeros((halfspaces.shape[1],))
@@ -119,10 +117,6 @@ def qhull(A,J,b,do_simple_processing=True):
     b_lower = - halfspaces[:, -1:]
     res = linprog(c, A_ub=A_lower, b_ub=b_lower, bounds=(None, None))
     if (res.success):
-        if(do_simple_processing):
-            Ax = halfspaces[:, :-1]
-            bx = halfspaces[:, -1:]
-            return True, Ax, bx.transpose()
 
         feasible_point_2 = np.array([res.x[0], res.x[1]])
         hs = HalfspaceIntersection(halfspaces, feasible_point_2)
@@ -165,7 +159,31 @@ def main():
         [0.798264,   0.493044,   0.193992]])
     b= np.array([-1.2685100,  -1.5982600,  -0.00173,  -1.1851000,  -0.3314850])
 
-    qhull(J_up,J_low,b,do_simple_processing=False)
+    suc,Ax,bx = qhull(J_up,J_low,b,do_simple_processing=False)
+
+    nviolation = 0
+    projected = []
+    random_pt = []
+    for i in range(1000):
+        ra = -2.5+5*np.random.rand(np.shape(Ax)[1])
+        #feasible = (Ax.dot(ra) - bx)<0
+        proj = quad.project_action(ra,Ax,bx)
+        nviolation += np.sum((Ax.dot(proj)-bx)-0.001>0)
+        projected.append(proj)
+        random_pt.append(ra)
+
+    print("Projected violates constraints in {} cases".format(nviolation))
+
+    projected = np.array(projected)
+    random_pt = np.array(random_pt)
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, aspect='equal')
+    xlim, ylim = (-3, 3), (-3, 3)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    plt.plot(random_pt[:,0],random_pt[:,1],'ro',linewidth=5)
+    plt.plot(projected[:,0],projected[:,1],'bo',linewidth=5)
+    plt.show()
 
 #    halfspaces = np.array([[-1, 0., 1.5],
 #                           [0., -1., 0.],

@@ -27,7 +27,7 @@ class ManipulateEnv(gym.Env):
         self.goal = [-0.2, -0.5]
 
         #These seem to be here for the enjoyment of the reader only, what are theyused for?
-        self.action_space = spaces.Box(low=np.array([-10, -10]), high=np.array([10, 10]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
         self.observation_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
 
         self.action_scale = 10
@@ -40,8 +40,8 @@ class ManipulateEnv(gym.Env):
         self.pub = rospy.Publisher('/ee_rl/act', DesiredErrorDynamicsMsg, queue_size=None)
         self.effort_pub = rospy.Publisher('/position_joint_trajectory_controller/command', JointTrajectory, queue_size=1)
         self.rate = rospy.Rate(10) #10Hz
-        self.set_primitives()
-        self.set_tasks()
+        #self.set_primitives()
+        #self.set_tasks()
         self.rate.sleep()
         time.sleep(1) #wait for ros to start up
         #HOW ugly can you be?
@@ -49,7 +49,7 @@ class ManipulateEnv(gym.Env):
 
         csv_train = open("/home/tsv/hiqp_logs/constraints.csv", 'w', newline='')
         self.twriter = csv.writer(csv_train, delimiter=' ')
-        self.episode_trace = []
+        self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
 
     def set_scale(self,action_scale):
         self.action_scale = action_scale
@@ -98,17 +98,28 @@ class ManipulateEnv(gym.Env):
         self.de = data.de
         self.J = np.transpose(np.reshape(np.array(data.J_lower),[data.n_joints,data.n_constraints_lower]))
         self.A = np.transpose(np.reshape(np.array(data.J_upper),[data.n_joints,data.n_constraints_upper]))
-        self.b = np.reshape(np.array(data.b_upper),[data.n_constraints_upper,1])
+        self.b = -np.reshape(np.array(data.b_upper),[data.n_constraints_upper,1])
         self.rhs = np.reshape(np.array(data.rhs_fixed_term),[data.n_constraints_lower,1])
         self.q = np.reshape(np.array(data.q),[data.n_joints,1])
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.fresh = True
 
     def step(self, action):
-        success, Ax, bx = qhull(self.A,self.J,self.b,do_simple_processing=False)
+        success, Ax, bx = qhull(self.A,self.J,self.b,do_simple_processing=True)
         if(success) :
+            self.twriter.writerow(self.episode_trace[-1][0].tolist())
+            self.twriter.writerow(self.episode_trace[-1][1].tolist())
+            self.twriter.writerow(self.A)
+            self.twriter.writerow(self.b)
+            self.twriter.writerow(self.J)
+            self.twriter.writerow(action.numpy()[0])
+            self.twriter.writerow(self.observation)
             bx = bx - Ax.dot(self.rhs).transpose()
-            self.episode_trace.append((Ax,bx))
+            #we should be checking the actiuons were feasible according to previous set of constraints
+            feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
+            n_infeasible = np.sum(feasible>0.001)
+            self.episode_trace.append((Ax,bx,n_infeasible))
+            #print(feasible)
 
         # Execute one time step within the environment
         a = action.numpy()[0] * self.action_scale
@@ -124,6 +135,7 @@ class ManipulateEnv(gym.Env):
 
     def reset(self):
         self.episode_trace.clear()
+        self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
         # Reset the state of the environment to an initial state
         # subprocess.call("~/Workspaces/catkin_ws/src/panda_demos/panda_table_launch/scripts/sim_reset_episode_fast.sh", shell=True)
 
@@ -166,8 +178,7 @@ class ManipulateEnv(gym.Env):
         return self.observation  # reward, done, info can't be included
          
     def render(self, mode='human'):
-        qhull(self.A,self.J,self.b)
-
+        pass
         #self.twriter.writerow(self.A.tolist())
         #self.twriter.writerow(self.J.tolist())
         #self.twriter.writerow(self.b.tolist())
