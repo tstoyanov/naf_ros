@@ -33,7 +33,7 @@ def generate_plot(axis_dict, mean_dict, std_dict, colors, title):
     plt.grid()
     plt.show()
 
-def plot_means(mean_dict, title="Eval episode return"):
+def plot_means(figname, mean_dict, title="Eval episode return"):
     fig = plt.figure(1, figsize=(7, 9))
     legend_series = []
     for series in mean_dict:
@@ -43,7 +43,9 @@ def plot_means(mean_dict, title="Eval episode return"):
     plt.legend(legend_series)
     plt.tight_layout()
     plt.grid()
-    plt.show()
+    plt.savefig(figname)
+   # plt.show()
+    plt.close()
 
 def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
 
@@ -94,7 +96,7 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                     plt.tight_layout()
                     plt.xlim((-1,1))
                     plt.ylim((-1,1))
-                    plt.show()
+                    #plt.show()
                     figname= logdir+"/"+my_name+'_train_visits.png'
                     plt.savefig(figname)
                     plt.close()
@@ -109,7 +111,9 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                     plt.tight_layout()
                     plt.xlim((-1, 1))
                     plt.ylim((-1, 1))
-                    plt.show()
+                    figname = logdir + "/" + my_name + '_train_actions.png'
+                    plt.savefig(figname)
+                    plt.close()
 
                     #plot evaluation trajectories
                     fig2 = plt.figure()
@@ -122,7 +126,7 @@ def parse_csvs(logdir, seeds, kds, action_scales, update_steps):
                     plt.tight_layout()
                     plt.xlim((-1,1))
                     plt.ylim((-1, 1))
-                    plt.show()
+                    #plt.show()
                     figname = logdir + "/" + my_name + '_eval_visits.png'
                     plt.savefig(figname)
                     plt.close()
@@ -138,10 +142,11 @@ args = parser.parse_args()
 seeds = [4]
 kds = [0.0] #,1.0,10.0,100.0]
 ascales = [1.0]
-uscales = [10]
+uscales = [1]
 
 means = parse_csvs(args.logdir,seeds,kds,ascales,uscales)
-plot_means(means)
+figname = args.logdir + "/evaluation_curves.png"
+plot_means(figname,means)
 
 #colors = ['darkgreen', 'maroon', 'darkorange','indigo',  'olive', 'navy', 'magenta', 'slategrey']
 #colors = ['slategrey', 'lightsteelblue', 'cornflowerblue', 'royalblue', 'rosybrown', 'lightcoral', 'indianred', 'brown']

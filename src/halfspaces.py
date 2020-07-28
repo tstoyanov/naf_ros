@@ -65,107 +65,71 @@ def plot_halfspace_2d(halfspaces,hs,feasible,signs):
     plt.show()
 
 
-def qhull(A,J,b,do_simple_processing=True):
+def qhull(A,J,b):
     n_jnts = np.shape(A[1])[0]
     n_constraints = np.shape(A)[0]
     n_action_dim = np.shape(J)[0]
-    halfspaces = np.zeros((n_constraints,n_action_dim+1))
 
     Ax = np.zeros((1, n_action_dim))
     bx = np.zeros(1)
 
+    #construct an LPto find a feasible point in upper space
     norm_vector = np.reshape(np.linalg.norm(A, axis=1),(n_constraints, 1))
     c = np.zeros((n_jnts+1,))
     c[-1] = -1
     A_up = np.hstack((A, norm_vector))
     # a feasible point that is furthest from constraints solution
-    second_feasible = linprog(c,A_ub=A_up, b_ub=b, bounds=(None, None))
+    upper_feasible = linprog(c,A_ub=A_up, b_ub=b, bounds=(None, None))
 
-    if(second_feasible.success):
+    if(upper_feasible.success):
         #check = A.dot(second_feasible.x[:-1]) - b #should be < 0
-        feasible_point = J.dot(second_feasible.x[:-1])
+        feasible_point = upper_feasible.x[:-1]
     else:
         print("infeasible (upper)")
         return False, Ax, bx
 
-    # iterating through all higher-level constraints
-    for i in range(n_constraints):
-        row = A[i, :]
-        # pseudoinverse of a matrix with linearly independent rows is A'*(AA')^-1
-        pinv_row = np.reshape(np.transpose(row) / (row.dot(np.transpose(row))), [1, n_jnts])
-        # point on the constraint
-        bi = b[i].item()
-        point = J.dot(np.transpose(bi * pinv_row))
-        # nullspace projection of constraint
-        Proj = np.identity(n_jnts) - np.multiply(np.transpose(np.repeat(pinv_row, n_jnts, axis=0)), row)
-        U, S, V = np.linalg.svd(J.dot(Proj))
-        dot = U[:, 1].dot(feasible_point - np.reshape(point,np.shape(feasible_point)))
-        normal = -np.sign(dot).item() * U[:, 1]
-        normal = normal / np.linalg.norm(normal)
-        halfspaces[i,0:n_action_dim] = normal
-        halfspaces[i,-1] = normal.dot(point)
+    #construct halfspace intersection -> convex feasible region in upper space
+    halfspaces = np.hstack((A,np.reshape(-b,(n_constraints,1))))
+    hs = HalfspaceIntersection(halfspaces, feasible_point)
 
-    if (do_simple_processing):
-        Ax = -halfspaces[:, :-1]
-        bx = halfspaces[:, -1:]
-        return True, Ax, bx.transpose()
+    #project vertices to lower space
+    lower_points = np.matmul(J,hs.intersections.T)
 
-    norm_vector = np.reshape(np.linalg.norm(halfspaces[:, :-1], axis=1),(halfspaces.shape[0], 1))
-    c = np.zeros((halfspaces.shape[1],))
-    c[-1] = -1
-    A_lower = np.hstack((halfspaces[:, :-1], norm_vector))
-    b_lower = - halfspaces[:, -1:]
-    res = linprog(c, A_ub=A_lower, b_ub=b_lower, bounds=(None, None))
-    if (res.success):
+    # convex hull in lower space should be boundary to allowed region
+    hull = ConvexHull(lower_points.T)
 
-        feasible_point_2 = np.array([res.x[0], res.x[1]])
-        hs = HalfspaceIntersection(halfspaces, feasible_point_2)
+    Ax = hull.equations[:,:-1]
+    bx = -hull.equations[:,-1]
 
-        #let's now form the equations
-        hull = ConvexHull(hs.intersections)
-
-        vlist = np.append(hull.vertices, hull.vertices[0])
-        Ax = np.zeros((np.shape(hull.vertices)[0], 2))
-        bx = np.zeros(np.shape(hull.vertices)[0])
-
-        for i in range(np.shape(vlist)[0] - 1):
-            a = hs.intersections[vlist[i]]
-            b = hs.intersections[vlist[i + 1]]
-
-            vec = b - a  # hs.intersections[simplex[1],:] - hs.intersections[simplex[0],:]
-            normal = np.array([-vec[1], vec[0]])
-            normal = -normal / np.linalg.norm(normal)
-            Ax[i, :] = -normal
-            bx[i] = normal.dot(a)
-
-        #just for fun, let's check feasible point
-        #ff = Ax.dot(feasible_point_2)
-        #plot_halfspace_2d(halfspaces, hs, res, signs)
-        return True, Ax, bx
-    else:
-        print("infeasible (lower)")
-        return False, Ax, bx
+    # just for fun, let's check feasible point
+    ff = Ax.dot(J.dot(feasible_point)) - bx
+    return True, Ax, bx
 
 
 def main():
+    J_up = -np.array([[0.79908, 0.48137, 0.19503],
+        [-0.43127, -0.04519, 0.04431],
+        [0.43127, 0.04519, -0.04431],
+        [0.00000, -0.34075, -0.08971],
+        [-0.79908, -0.48137, -0.19503]])
+    J_low = np.array([[-0.431271,-0.045188,0.044313],
+        [0.799077,0.481367,0.195029]])
+    b= np.array([-1.2784637,-1.5956844,-0.0043156,-1.0999060,-0.3215363])
 
-    J_up = np.array([[0.79826,   0.49304,   0.19399],
-        [-0.46852,  -0.07248,  -0.04865],
-        [0.46852,   0.07248,   0.04865],
-        [0.00000,  -0.35837,  -0.15695],
-        [-0.79826,  -0.49304, -0.19399]])
-#        [0.0,0.0,-1.0]])
-    J_low = np.array([[-0.468515,-0.072484,-0.048653],
-        [0.798264,   0.493044,   0.193992]])
-    b= np.array([-1.2685100,  -1.5982600,  -0.00173,  -1.1851000,  -0.3314850])
-
-    suc,Ax,bx = qhull(J_up,J_low,b,do_simple_processing=False)
+    #suc,Ax,bx = qhull(J_up,J_low,b)
+    #cube
+    C = np.array([[1, 0, 0], [-1, 0, 0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]])
+    x = np.array([1.5,0.5,2.5])
+    xq = C.dot(x)
+    bb = np.array([2,-1,1,0,3,-2])
+    Jl = np.array([[0.5,0.5,0.1],[0.1,1,0.3]])
+    suc,Ax,bx = qhull(C,Jl,bb)
 
     nviolation = 0
     projected = []
     random_pt = []
     for i in range(1000):
-        ra = -2.5+5*np.random.rand(np.shape(Ax)[1])
+        ra = -5+10*np.random.rand(np.shape(Ax)[1])
         #feasible = (Ax.dot(ra) - bx)<0
         proj = quad.project_action(ra,Ax,bx)
         nviolation += np.sum((Ax.dot(proj)-bx)-0.001>0)
@@ -178,7 +142,7 @@ def main():
     random_pt = np.array(random_pt)
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, aspect='equal')
-    xlim, ylim = (-3, 3), (-3, 3)
+    xlim, ylim = (-5, 5), (-5, 5)
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
     plt.plot(random_pt[:,0],random_pt[:,1],'ro',linewidth=5)

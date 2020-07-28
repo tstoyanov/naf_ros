@@ -39,7 +39,7 @@ def main():
                         help='number of episodes with noise (default: 100)')
     parser.add_argument('--seed', type=int, default=4, metavar='N',
                         help='random seed (default: 4)')
-    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                         help='batch size (default: 512)')
     parser.add_argument('--num_steps', type=int, default=100, metavar='N',
                         help='max episode length (default: 300)')
@@ -47,7 +47,7 @@ def main():
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -59,6 +59,10 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
+    parser.add_argument('--project_actions', type=bool, default=True,
+                        help='project to feasible actions only during training')
+    parser.add_argument('--optimize_actions', type=bool, default=True,
+                        help='add loss to objective')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
@@ -141,7 +145,8 @@ def main():
         while True:
             # -- action selection, observation and store transition --
             action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
-            action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
+            if(args.project_actions):
+                action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
 
             next_state, reward, done, Ax, bx = env.step(action)
 
@@ -204,7 +209,7 @@ def main():
             for _ in range(args.updates_per_step*args.num_steps):
                 transitions = memory.sample(args.batch_size)
                 batch = Transition(*zip(*transitions))
-                value_loss, reg_loss = agent.update_parameters(batch)
+                value_loss, reg_loss = agent.update_parameters(batch,optimize_feasible_mu=args.optimize_actions)
 
                 writer.add_scalar('loss/full', value_loss, updates)
                 writer.add_scalar('loss/value', value_loss-reg_loss, updates)

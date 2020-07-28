@@ -129,7 +129,7 @@ class NAF:
         return mu.clamp(-1, 1)
 
     #@profile
-    def update_parameters(self, batch):
+    def update_parameters(self, batch, optimize_feasible_mu=False):
 
         state_batch = Variable(torch.cat(batch.state))
         action_batch = Variable(torch.cat(batch.action))
@@ -148,7 +148,8 @@ class NAF:
 
         loss = MSELoss(state_action_values, expected_state_action_values)
         regularizer_loss = RegLoss(means,batch.Ax,batch.bx)
-        loss = loss + regularizer_loss
+        if(optimize_feasible_mu):
+            loss = loss + regularizer_loss
 
         self.optimizer.zero_grad()
         loss.backward()

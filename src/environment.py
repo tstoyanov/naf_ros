@@ -89,7 +89,7 @@ class ManipulateEnv(gym.Env):
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
                           dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state']) #, '/home/aass/hiqp_logs/'
         redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
-                          def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
+                          def_params=['TDefFullPose', '-0.3', '-0.3', '-0.25'],
                           dyn_params=['TDynPD', '0.5', '1.5'])
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
@@ -99,13 +99,13 @@ class ManipulateEnv(gym.Env):
         self.J = np.transpose(np.reshape(np.array(data.J_lower),[data.n_joints,data.n_constraints_lower]))
         self.A = np.transpose(np.reshape(np.array(data.J_upper),[data.n_joints,data.n_constraints_upper]))
         self.b = -np.reshape(np.array(data.b_upper),[data.n_constraints_upper,1])
-        self.rhs = np.reshape(np.array(data.rhs_fixed_term),[data.n_constraints_lower,1])
+        self.rhs = -np.reshape(np.array(data.rhs_fixed_term),[data.n_constraints_lower,1])
         self.q = np.reshape(np.array(data.q),[data.n_joints,1])
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.fresh = True
 
     def step(self, action):
-        success, Ax, bx = qhull(self.A,self.J,self.b,do_simple_processing=True)
+        success, Ax, bx = qhull(self.A,self.J,self.b)
         if(success) :
             self.twriter.writerow(self.episode_trace[-1][0].tolist())
             self.twriter.writerow(self.episode_trace[-1][1].tolist())
@@ -122,7 +122,7 @@ class ManipulateEnv(gym.Env):
             #print(feasible)
 
         # Execute one time step within the environment
-        a = action.numpy()[0] * self.action_scale
+        a = -action.numpy()[0] * self.action_scale
         #act_pub = [a[0], a[1]]
         self.pub.publish(a)
         self.fresh = False
