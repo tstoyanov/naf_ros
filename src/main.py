@@ -59,9 +59,9 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--project_actions', type=bool, default=True,
+    parser.add_argument('--project_actions', type=bool, default=False,
                         help='project to feasible actions only during training')
-    parser.add_argument('--optimize_actions', type=bool, default=True,
+    parser.add_argument('--optimize_actions', type=bool, default=False,
                         help='add loss to objective')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
@@ -129,7 +129,9 @@ def main():
 
     for i_episode in range(args.num_episodes+1):
         # -- reset environment for every episode --
+        t_st = time.time()
         state = torch.Tensor([env.reset()])
+        print("reset took {}".format(time.time() - t_st))
 
         # -- initialize noise (random process N) --
         if args.ou_noise:
@@ -145,10 +147,14 @@ def main():
         while True:
             # -- action selection, observation and store transition --
             action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
-            if(args.project_actions):
+            if args.project_actions:
+                #t_st = time.time()
                 action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
+                #print("projecting took {}".format(time.time()-t_st))
 
+            #t_st = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
+            #print("act took {}".format(time.time() - t_st))
 
             visits = np.concatenate((visits,state.numpy(),args.action_scale*action,[reward]),axis=None)
             #env.render()
@@ -180,8 +186,8 @@ def main():
             if done or total_numsteps % args.num_steps == 0:
                 break
 
-        print("Train Episode: {}, total numsteps: {}, reward: {}".format(i_episode, total_numsteps,
-                                                                         episode_reward))
+        print("Train Episode: {}, total numsteps: {}, reward: {}, time: {}".format(i_episode, total_numsteps,
+                                                                         episode_reward,time.time()-t_start))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
@@ -206,6 +212,7 @@ def main():
             print("Training model")
             env.step(torch.Tensor([[0,0]]))
 
+            t_st = time.time()
             for _ in range(args.updates_per_step*args.num_steps):
                 transitions = memory.sample(args.batch_size)
                 batch = Transition(*zip(*transitions))
@@ -216,6 +223,7 @@ def main():
                 writer.add_scalar('loss/regularizer', reg_loss, updates)
 
                 updates += 1
+            print("train took {}".format(time.time() - t_st))
 
         agent.save_value_funct(
             args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
