@@ -81,7 +81,7 @@ def qhull(A,J,b):
     # a feasible point that is furthest from constraints solution
     upper_feasible = linprog(c,A_ub=A_up, b_ub=b, bounds=(None, None))
 
-    if(upper_feasible.success):
+    if(upper_feasible.success and upper_feasible.x[-1]>0):
         #check = A.dot(second_feasible.x[:-1]) - b #should be < 0
         feasible_point = upper_feasible.x[:-1]
     else:
@@ -125,6 +125,7 @@ def main():
     Jl = np.array([[0.5,0.5,0.1],[0.1,1,0.3]])
     suc,Ax,bx = qhull(C,Jl,bb)
 
+    #Ax = np.zeros(np.shape(Ax))
     nviolation = 0
     projected = []
     random_pt = []

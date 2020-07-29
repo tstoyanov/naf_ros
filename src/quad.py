@@ -2,6 +2,9 @@ import numpy as np
 import quadprog as qp
 
 def project_action(action,Ax,bx):
+    if np.linalg.norm(Ax)==0:
+        print("infeasible target set")
+        return np.zeros(np.shape(action))
     ndim = np.shape(action)[0]
     qp_G = np.identity(ndim)
     qp_a = np.array(action,dtype="float64")

@@ -144,17 +144,21 @@ def main():
         Ax_prev = np.identity(env.action_space.shape[0])
         bx_prev = env.action_space.high
 
+        t_project = 0
+        t_act = 0
         while True:
             # -- action selection, observation and store transition --
             action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
             if args.project_actions:
-                #t_st = time.time()
+                t_st0 = time.time()
                 action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
-                #print("projecting took {}".format(time.time()-t_st))
+                t_project += time.time()-t_st0
+                #print("projecting took {}".format(time.time()-t_st0))
 
-            #t_st = time.time()
+            t_st0 = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
-            #print("act took {}".format(time.time() - t_st))
+            t_act += time.time() - t_st0
+            #print("act took {}".format(time.time() - t_st0))
 
             visits = np.concatenate((visits,state.numpy(),args.action_scale*action,[reward]),axis=None)
             #env.render()
@@ -186,8 +190,8 @@ def main():
             if done or total_numsteps % args.num_steps == 0:
                 break
 
-        print("Train Episode: {}, total numsteps: {}, reward: {}, time: {}".format(i_episode, total_numsteps,
-                                                                         episode_reward,time.time()-t_start))
+        print("Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
+                                                                         episode_reward,time.time()-t_st,t_act,t_project))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
