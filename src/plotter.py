@@ -139,10 +139,10 @@ parser.add_argument('--logdir', default="",
                     help='directory where to dump log files')
 args = parser.parse_args()
 
-seeds = [4]
+seeds = [3412]
 kds = [0.0] #,1.0,10.0,100.0]
 ascales = [1.0]
-uscales = [1]
+uscales = [1, 20]
 
 means = parse_csvs(args.logdir,seeds,kds,ascales,uscales)
 figname = args.logdir + "/evaluation_curves.png"

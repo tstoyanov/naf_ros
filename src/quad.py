@@ -13,3 +13,26 @@ def project_action(action,Ax,bx):
     meq = 0
     solution = qp.solve_qp(qp_G,qp_a,qp_C,qp_b,meq)
     return solution[0]
+
+def project_and_sample(action,Ax,bx,sigma):
+    if np.linalg.norm(Ax)==0:
+        print("infeasible target set")
+        return np.zeros(np.shape(action))
+    ndim = np.shape(action)[0]
+    epsilon=10e-5 #for numerical issues
+
+    an = project_action(action,Ax,bx)
+    bx = bx+epsilon
+    violate = np.matmul(Ax,an)-bx
+    idx = np.argmax(np.matmul(Ax,an)-bx)
+    normal = Ax[idx,:] / np.linalg.norm(Ax[idx,:])
+    direction= np.random.multivariate_normal(-normal, sigma[0]*np.identity(ndim))
+    svals = np.divide(-(np.matmul(Ax,an)-bx),np.matmul(Ax,direction)+epsilon)
+    svals = svals[svals>0]
+    smax = np.min(svals[svals>0]) if np.shape(svals)[0]>0 else 1
+    s = np.abs(np.random.normal(0,sigma[1]*smax/3))
+    direction = s*direction
+    #print("step:{},{}".format(direction[0],direction[1]))
+    return an + direction
+
+

@@ -102,6 +102,7 @@ class ManipulateEnv(gym.Env):
         self.rhs = -np.reshape(np.array(data.rhs_fixed_term),[data.n_constraints_lower,1])
         self.q = np.reshape(np.array(data.q),[data.n_joints,1])
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
+        self.ddq_star = np.reshape(np.array(data.ddq_star),[data.n_joints,1])
         self.fresh = True
 
     def step(self, action):
@@ -114,6 +115,7 @@ class ManipulateEnv(gym.Env):
             self.twriter.writerow(self.J)
             self.twriter.writerow(action.numpy()[0])
             self.twriter.writerow(self.observation)
+            self.twriter.writerow(self.ddq_star)
             bx = bx - Ax.dot(self.rhs).transpose()
             #we should be checking the actiuons were feasible according to previous set of constraints
             feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]

@@ -8,6 +8,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import quad
+from ounoise import OUNoise
 
 def plot_halfspace_2d(halfspaces,hs,feasible,signs):
     fig = plt.figure()
@@ -125,7 +126,6 @@ def main():
     Jl = np.array([[0.5,0.5,0.1],[0.1,1,0.3]])
     suc,Ax,bx = qhull(C,Jl,bb)
 
-    #Ax = np.zeros(np.shape(Ax))
     nviolation = 0
     projected = []
     random_pt = []
@@ -148,6 +148,49 @@ def main():
     ax.set_ylim(ylim)
     plt.plot(random_pt[:,0],random_pt[:,1],'ro',linewidth=5)
     plt.plot(projected[:,0],projected[:,1],'bo',linewidth=5)
+    #plt.show()
+
+    #checks for sampling
+    boundary = projected
+    projected = []
+    sampled = []
+    actions = []
+    projected_actions = []
+    projected_ou = []
+    nsamples = 10
+    n_actions = 1
+
+    for j in range(n_actions):
+        action = 2 * np.random.rand(np.shape(Ax)[1])
+        actions.append(action)
+        pa = quad.project_action(action, Ax, bx)
+        projected_actions.append(pa)
+        ounoise = OUNoise(np.shape(action)[0],scale=0.5)
+        for i in range(nsamples):
+            noisy_action = action+ounoise.noise()
+            projected_action =quad.project_action(noisy_action,Ax,bx)
+            projected_ou.append(quad.project_action(pa+ounoise.noise(),Ax,bx))
+            projected.append(projected_action)
+            sampled.append(quad.project_and_sample(action,Ax,bx,[0.2,0.9]))
+
+    projected = np.array(projected)
+    projected_ou = np.array(projected_ou)
+    projected_actions = np.array(projected_actions)
+    actions = np.array(actions)
+    sampled = np.array(sampled)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, aspect='equal')
+    xlim, ylim = (-2, 4), (-2, 4)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    plt.plot(sampled[:,0],sampled[:,1],'ro',linewidth=5,label='projection-aware samples')
+    plt.plot(projected[:,0],projected[:,1],'bo',linewidth=5,label='OU noisy samples')
+    plt.plot(projected_ou[:,0],projected_ou[:,1],'go',linewidth=5,label='OU on projected')
+    plt.plot(boundary[:,0],boundary[:,1],'k.',linewidth=5,label='actionset boundary')
+    plt.plot(actions[:,0],actions[:,1],'gx',linewidth=8,label='uniform sampling')
+    plt.plot(projected_actions[:,0],projected_actions[:,1],'mx',linewidth=8,label='projected uniform sample')
+    plt.legend()
     plt.show()
 
 #    halfspaces = np.array([[-1, 0., 1.5],

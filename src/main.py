@@ -30,14 +30,15 @@ def main():
                         help='discount factor for reward (default: 0.99)')
     parser.add_argument('--tau', type=float, default=0.001,
                         help='discount factor for model (default: 0.001)')
-    parser.add_argument('--ou_noise', type=bool, default=True)
+    parser.add_argument('--ou_noise', type=bool, default=False)
+    parser.add_argument('--constr_gauss_sample', type=bool, default=False)
     parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
                         help='initial noise scale (default: 0.4)')
     parser.add_argument('--final_noise_scale', type=float, default=0.2, metavar='G',
                         help='final noise scale (default: 0.05)')
     parser.add_argument('--exploration_end', type=int, default=85, metavar='N',
                         help='number of episodes with noise (default: 100)')
-    parser.add_argument('--seed', type=int, default=4, metavar='N',
+    parser.add_argument('--seed', type=int, default=3412, metavar='N',
                         help='random seed (default: 4)')
     parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                         help='batch size (default: 512)')
@@ -47,7 +48,7 @@ def main():
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=20, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -105,7 +106,7 @@ def main():
 
     # -- declare memory buffer and random process N
     memory = ReplayMemory(args.replay_size)
-    ounoise = OUNoise(env.action_space.shape[0]) if args.ou_noise else None
+    ounoise = OUNoise(env.action_space.shape[0])
 
     # -- load existing model --
     if args.load_agent:
@@ -133,11 +134,14 @@ def main():
         state = torch.Tensor([env.reset()])
         print("reset took {}".format(time.time() - t_st))
 
+        scale = (args.noise_scale - args.final_noise_scale) * max(0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
+        scale = [min(scale/2,0.4), min(scale/8,0.2)]
+        print("noise scale is {} {}".format(scale[0],scale[1]))
+
         # -- initialize noise (random process N) --
-        if args.ou_noise:
-            ounoise.scale = (args.noise_scale - args.final_noise_scale) * max(
-                0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
-            ounoise.reset()
+        ounoise.scale = (args.noise_scale - args.final_noise_scale) * max(
+            0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
+        ounoise.reset()
 
         episode_reward = 0
         visits = []
@@ -148,12 +152,22 @@ def main():
         t_act = 0
         while True:
             # -- action selection, observation and store transition --
-            action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
-            if args.project_actions:
-                t_st0 = time.time()
-                action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
-                t_project += time.time()-t_st0
-                #print("projecting took {}".format(time.time()-t_st0))
+            if args.ou_noise:
+                action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
+                if args.project_actions:
+                    t_st0 = time.time()
+                    action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
+                    t_project += time.time()-t_st0
+                    #print("projecting took {}".format(time.time()-t_st0))
+            else:
+                if args.constr_gauss_sample:
+                    action = agent.select_action(state)
+                    action = torch.Tensor(
+                        [quad.project_and_sample(env.action_scale * action.numpy()[0], Ax_prev, bx_prev, scale) / env.action_scale])
+                else:
+                    action = agent.select_action(state)
+                    pa = quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev)
+                    action = torch.Tensor([quad.project_action(pa + ounoise.noise(), Ax_prev, bx_prev)/ env.action_scale])
 
             t_st0 = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
@@ -238,17 +252,23 @@ def main():
         if i_episode % 10 == 0:
             #state = env.reset()
             state = torch.Tensor([env.reset()])
+            Ax_prev = np.identity(env.action_space.shape[0])
+            bx_prev = env.action_space.high
 
             episode_reward = 0
             visits = []
             while True:
-                action = agent.select_action(state)
-        
+                #action = agent.select_action(state)
+                action = torch.Tensor(
+                    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
+
                 next_state, reward, done, Ax, bx = env.step(action)
                 visits = np.concatenate((visits, state.numpy(), action, [reward]), axis=None)
                 episode_reward += reward
                 greedy_numsteps += 1
-                        
+                Ax_prev = Ax
+                bx_prev = bx[0]
+
                 #state = next_state
                 state = torch.Tensor([next_state])
 
