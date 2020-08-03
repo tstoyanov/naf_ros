@@ -106,6 +106,8 @@ def qhull(A,J,b):
     ff = Ax.dot(J.dot(feasible_point)) - bx
     return True, Ax, bx
 
+def evl_Gaussain(x, mu, Sigma):
+    return np.matmul((x-mu).T,Sigma).dot(x-mu)
 
 def main():
     J_up = -np.array([[0.79908, 0.48137, 0.19503],
@@ -156,15 +158,19 @@ def main():
     sampled = []
     actions = []
     projected_actions = []
+    projected_actions2 = []
     projected_ou = []
-    nsamples = 10
+    nsamples = 1
     n_actions = 1
+    P = np.array([[0.001,0],[0,0.03]])
 
     for j in range(n_actions):
-        action = 2 * np.random.rand(np.shape(Ax)[1])
+        action = np.array([1,3]) #2 * np.random.rand(np.shape(Ax)[1])
         actions.append(action)
         pa = quad.project_action(action, Ax, bx)
         projected_actions.append(pa)
+        pa2 = quad.project_action_cov(action, Ax, bx, P)
+        projected_actions2.append(pa2)
         ounoise = OUNoise(np.shape(action)[0],scale=0.5)
         for i in range(nsamples):
             noisy_action = action+ounoise.noise()
@@ -176,6 +182,7 @@ def main():
     projected = np.array(projected)
     projected_ou = np.array(projected_ou)
     projected_actions = np.array(projected_actions)
+    projected_actions2 = np.array(projected_actions2)
     actions = np.array(actions)
     sampled = np.array(sampled)
 
@@ -190,6 +197,13 @@ def main():
     plt.plot(boundary[:,0],boundary[:,1],'k.',linewidth=5,label='actionset boundary')
     plt.plot(actions[:,0],actions[:,1],'gx',linewidth=8,label='uniform sampling')
     plt.plot(projected_actions[:,0],projected_actions[:,1],'mx',linewidth=8,label='projected uniform sample')
+    plt.plot(projected_actions2[:,0],projected_actions2[:,1],'mo',linewidth=8,label='Cov projected uniform sample')
+
+    X, Y = np.mgrid[-1:6:200j, -1:6:200j]
+    positions = np.vstack([X.ravel(), Y.ravel()])
+    z = [evl_Gaussain(positions[:,i].T, action, P) for i in range(np.shape(positions)[1])]
+    plt.contour(X,Y,np.reshape(z,np.shape(X)),levels=500,label='Action pdf')
+
     plt.legend()
     plt.show()
 

@@ -30,25 +30,31 @@ def main():
                         help='discount factor for reward (default: 0.99)')
     parser.add_argument('--tau', type=float, default=0.001,
                         help='discount factor for model (default: 0.001)')
-    parser.add_argument('--ou_noise', type=bool, default=False)
-    parser.add_argument('--constr_gauss_sample', type=bool, default=False)
-    parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
+    parser.add_argument('--ou_noise', type=bool, default=True,
+                        help='Should we use an OU process to sample noise?')
+    parser.add_argument('--constr_gauss_sample', type=bool, default=False,
+                        help='Should we use constrained Gaussian sampling?')
+    parser.add_argument('--noise_scale', type=float, default=0.2, metavar='G',
                         help='initial noise scale (default: 0.4)')
-    parser.add_argument('--final_noise_scale', type=float, default=0.2, metavar='G',
+    parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
                         help='final noise scale (default: 0.05)')
-    parser.add_argument('--exploration_end', type=int, default=85, metavar='N',
+    parser.add_argument('--project_actions', type=bool, default=False,
+                        help='project to feasible actions only during training')
+    parser.add_argument('--optimize_actions', type=bool, default=False,
+                        help='add loss to objective')
+    parser.add_argument('--exploration_end', type=int, default=45, metavar='N',
                         help='number of episodes with noise (default: 100)')
-    parser.add_argument('--seed', type=int, default=3412, metavar='N',
+    parser.add_argument('--seed', type=int, default=54123, metavar='N',
                         help='random seed (default: 4)')
     parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                         help='batch size (default: 512)')
-    parser.add_argument('--num_steps', type=int, default=100, metavar='N',
+    parser.add_argument('--num_steps', type=int, default=300, metavar='N',
                         help='max episode length (default: 300)')
-    parser.add_argument('--num_episodes', type=int, default=100, metavar='N',
+    parser.add_argument('--num_episodes', type=int, default=50, metavar='N',
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
-    parser.add_argument('--updates_per_step', type=int, default=20, metavar='N',
+    parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
                     help='model updates per simulator step (default: 50)')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
@@ -60,10 +66,6 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--project_actions', type=bool, default=False,
-                        help='project to feasible actions only during training')
-    parser.add_argument('--optimize_actions', type=bool, default=False,
-                        help='add loss to objective')
     parser.add_argument('--logdir', default="",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
@@ -135,7 +137,7 @@ def main():
         print("reset took {}".format(time.time() - t_st))
 
         scale = (args.noise_scale - args.final_noise_scale) * max(0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
-        scale = [min(scale/2,0.4), min(scale/8,0.2)]
+        scale = [min(scale,0.4), min(scale,0.2)]
         print("noise scale is {} {}".format(scale[0],scale[1]))
 
         # -- initialize noise (random process N) --
@@ -155,19 +157,16 @@ def main():
             if args.ou_noise:
                 action = agent.select_action(state, ounoise) if args.train_model else agent.select_action(state)
                 if args.project_actions:
-                    t_st0 = time.time()
-                    action = torch.Tensor([quad.project_action(env.action_scale*action.numpy()[0],Ax_prev,bx_prev) / env.action_scale])
-                    t_project += time.time()-t_st0
-                    #print("projecting took {}".format(time.time()-t_st0))
+                    #project, add noise, project again
+                    action = agent.select_proj_action(state,Ax_prev,bx_prev,ounoise)
+                #else clause: just plain OU noise on top (or no-noise)
             else:
                 if args.constr_gauss_sample:
-                    action = agent.select_action(state)
-                    action = torch.Tensor(
-                        [quad.project_and_sample(env.action_scale * action.numpy()[0], Ax_prev, bx_prev, scale) / env.action_scale])
+                    #Gaussian noise sample
+                    action = agent.select_proj_action(state,Ax_prev,bx_prev,simple_noise=scale)
                 else:
-                    action = agent.select_action(state)
-                    pa = quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev)
-                    action = torch.Tensor([quad.project_action(pa + ounoise.noise(), Ax_prev, bx_prev)/ env.action_scale])
+                    #noise-free run
+                    action = agent.select_proj_action(state,Ax_prev,bx_prev)
 
             t_st0 = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
@@ -194,13 +193,6 @@ def main():
 
             state = next_state
 
-            #else:
-            #    time.sleep(0.005)
-
-            #env.render()
-            #time.sleep(0.005)
-            #env.rate.sleep()
-
             if done or total_numsteps % args.num_steps == 0:
                 break
 
@@ -210,19 +202,6 @@ def main():
 
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
         rewards.append(episode_reward)
-
-#        print("rendering episode constraints")
-#        fig = plt.figure()
-#        ax = fig.add_subplot(1, 1, 1, aspect='equal')
-#        xlim, ylim = (-5, 5), (-5, 5)
-#        for hs in env.episode_trace:
-#           ax.cla()
-#           x, y = zip(*hs.intersections)
-#           ax.plot(x, y, 'ro', markersize=8)
-#           ax.set_xlim(xlim)
-#           ax.set_ylim(ylim)
-#           plt.pause(0.1)
-#       plt.close()
 
         #Training models
         if len(memory) >= args.batch_size and args.train_model:
@@ -246,10 +225,10 @@ def main():
         agent.save_value_funct(
             args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
             i_episode,
-            ([-3.0, -3.0], [3.0, 3.0], [600, 600]))
+            ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
         #runing evaluation episode
         greedy_numsteps = 0
-        if i_episode % 10 == 0:
+        if i_episode % 2 == 0:
             #state = env.reset()
             state = torch.Tensor([env.reset()])
             Ax_prev = np.identity(env.action_space.shape[0])
@@ -258,9 +237,9 @@ def main():
             episode_reward = 0
             visits = []
             while True:
-                #action = agent.select_action(state)
-                action = torch.Tensor(
-                    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
+                action = agent.select_action(state)
+                #action = torch.Tensor(
+                #    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
 
                 next_state, reward, done, Ax, bx = env.step(action)
                 visits = np.concatenate((visits, state.numpy(), action, [reward]), axis=None)
@@ -269,12 +248,7 @@ def main():
                 Ax_prev = Ax
                 bx_prev = bx[0]
 
-                #state = next_state
                 state = torch.Tensor([next_state])
-
-                #env.render()
-                #time.sleep(0.01)
-                #   env.rate.sleep()
 
                 if done or greedy_numsteps % args.num_steps == 0:
                     break

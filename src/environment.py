@@ -106,23 +106,6 @@ class ManipulateEnv(gym.Env):
         self.fresh = True
 
     def step(self, action):
-        success, Ax, bx = qhull(self.A,self.J,self.b)
-        if(success) :
-            self.twriter.writerow(self.episode_trace[-1][0].tolist())
-            self.twriter.writerow(self.episode_trace[-1][1].tolist())
-            self.twriter.writerow(self.A)
-            self.twriter.writerow(self.b)
-            self.twriter.writerow(self.J)
-            self.twriter.writerow(action.numpy()[0])
-            self.twriter.writerow(self.observation)
-            self.twriter.writerow(self.ddq_star)
-            bx = bx - Ax.dot(self.rhs).transpose()
-            #we should be checking the actiuons were feasible according to previous set of constraints
-            feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
-            n_infeasible = np.sum(feasible>0.001)
-            self.episode_trace.append((Ax,bx,n_infeasible))
-            #print(feasible)
-
         # Execute one time step within the environment
         a = -action.numpy()[0] * self.action_scale
         #act_pub = [a[0], a[1]]
@@ -131,6 +114,24 @@ class ManipulateEnv(gym.Env):
         while not self.fresh:
             self.rate.sleep()
 
+        success, Ax, bx = qhull(self.A,self.J,self.b)
+        Ax = -Ax
+        if(success) :
+            self.twriter.writerow(self.episode_trace[-1][0])
+            self.twriter.writerow(self.episode_trace[-1][1])
+            self.twriter.writerow(self.A)
+            self.twriter.writerow(self.b)
+            self.twriter.writerow(self.J)
+            self.twriter.writerow(action.numpy()[0])
+            self.twriter.writerow(self.observation)
+            self.twriter.writerow(self.ddq_star)
+            self.twriter.writerow(self.rhs)
+            bx = bx - Ax.dot(self.rhs).transpose()
+            #we should be checking the actiuons were feasible according to previous set of constraints
+            feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
+            n_infeasible = np.sum(feasible>0.001)
+            self.episode_trace.append((Ax,bx,n_infeasible))
+            #print(feasible)
 
         reward, done = self.calc_shaped_reward()
         return self.observation, reward, done, Ax, bx

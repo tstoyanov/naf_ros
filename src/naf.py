@@ -14,6 +14,8 @@ import matplotlib.colors as colors
 import matplotlib.cm as cmx
 import numpy
 import pickle
+import quad
+
 #@profile
 def MSELoss(input, target):
     return torch.sum((input - target)**2) / input.data.nelement()
@@ -86,13 +88,13 @@ class Policy(nn.Module):
         mu = (self.mu(x)).tanh()
 
         Q = None
+        num_outputs = mu.size(1)
+        L = self.L(x).view(-1, num_outputs, num_outputs)
+        L = L * \
+            self.tril_mask.expand_as(
+                L) + torch.exp(L) * self.diag_mask.expand_as(L)
+        P = torch.bmm(L, L.transpose(2, 1))
         if u is not None:
-            num_outputs = mu.size(1)
-            L = self.L(x).view(-1, num_outputs, num_outputs)
-            L = L * \
-                self.tril_mask.expand_as(
-                    L) + torch.exp(L) * self.diag_mask.expand_as(L)
-            P = torch.bmm(L, L.transpose(2, 1))
 
             u_mu = (u - mu).unsqueeze(2)
             A = -0.5 * \
@@ -100,7 +102,7 @@ class Policy(nn.Module):
 
             Q = A + V
 
-        return mu, Q, V
+        return mu, Q, V, P
 
 
 class NAF:
@@ -121,12 +123,31 @@ class NAF:
     #@profile
     def select_action(self, state, action_noise=None):
         self.model.eval()
-        mu, _, _ = self.model((Variable(state), None))
+        mu, _, _, _ = self.model((Variable(state), None))
         self.model.train()
         mu = mu.data
         if action_noise is not None:
             mu += torch.Tensor(action_noise.noise())
         return mu.clamp(-1, 1)
+
+    def select_proj_action(self, state, Ax, bx, action_noise=None, simple_noise=0):
+        self.model.eval()
+        mu, _, _, P = self.model((Variable(state), None))
+        self.model.train()
+        mu = mu.data
+
+        pa = quad.project_action_cov(mu.numpy()[0], Ax, bx, P.detach().numpy()[0])
+        if action_noise is not None:
+            pa = torch.Tensor([quad.project_action(pa + action_noise.noise(), Ax, bx)])
+        else:
+            if simple_noise!= 0:
+                #use project with noise
+                pa = torch.Tensor([quad.project_and_sample(pa, Ax, bx, simple_noise)])
+            else:
+                #no noise
+                pa = torch.Tensor([pa])
+        return pa
+
 
     #@profile
     def update_parameters(self, batch, optimize_feasible_mu=False):
@@ -137,14 +158,14 @@ class NAF:
         mask_batch = Variable(torch.cat(batch.mask))
         next_state_batch = Variable(torch.cat(batch.next_state))
 
-        _, _, next_state_values = self.target_model((next_state_batch, None))
+        _, _, next_state_values, _ = self.target_model((next_state_batch, None))
 
         reward_batch = reward_batch.unsqueeze(1)
         mask_batch = mask_batch.unsqueeze(1)
 
         expected_state_action_values = reward_batch + (self.gamma * mask_batch * next_state_values)
 
-        means, state_action_values, _ = self.model((state_batch, action_batch))
+        means, state_action_values, _, _ = self.model((state_batch, action_batch))
 
         loss = MSELoss(state_action_values, expected_state_action_values)
         regularizer_loss = RegLoss(means,batch.Ax,batch.bx)
@@ -190,7 +211,7 @@ class NAF:
         #mesh = mesh.unsqueeze(0)
 
         self.model.eval()
-        mu, _, V = self.model((Variable(mesh),None))
+        mu, _, V, _ = self.model((Variable(mesh),None))
         self.model.train()
 
 #        with open(base_name+"_ep{}_val.pk".format(episode), 'wb') as output:
@@ -219,7 +240,7 @@ class NAF:
 
     def plot_path(self, state, action, ep):
         self.model.eval()
-        _, Q, _ = self.model((Variable(torch.cat(state)), Variable(torch.cat(action))))
+        _, Q, _, _ = self.model((Variable(torch.cat(state)), Variable(torch.cat(action))))
         self.model.train()
         sx, sy = torch.cat(state).numpy().T
         ax, ay = torch.cat(action).numpy().T

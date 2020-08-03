@@ -14,6 +14,19 @@ def project_action(action,Ax,bx):
     solution = qp.solve_qp(qp_G,qp_a,qp_C,qp_b,meq)
     return solution[0]
 
+def project_action_cov(action,Ax,bx,P):
+    if np.linalg.norm(Ax)==0:
+        print("infeasible target set")
+        return np.zeros(np.shape(action))
+    ndim = np.shape(action)[0]
+    qp_G = np.array(P,dtype="float64")
+    qp_a = np.array(np.matmul(action.T,P),dtype="float64")
+    qp_C = np.array(-Ax.T,dtype="float64")
+    qp_b = np.array(-bx,dtype="float64")
+    meq = 0
+    solution = qp.solve_qp(qp_G,qp_a,qp_C,qp_b,meq)
+    return solution[0]
+
 def project_and_sample(action,Ax,bx,sigma):
     if np.linalg.norm(Ax)==0:
         print("infeasible target set")
