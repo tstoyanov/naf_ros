@@ -19,8 +19,12 @@ def project_action_cov(action,Ax,bx,P):
         print("infeasible target set")
         return np.zeros(np.shape(action))
     ndim = np.shape(action)[0]
-    qp_G = np.array(P,dtype="float64")
-    qp_a = np.array(np.matmul(action.T,P),dtype="float64")
+    if np.all(np.linalg.eigvals(P) > 0):
+        qp_G = np.array(P,dtype="float64")
+    else:
+        print("THIS SHOULD NEVER HAPPEN!")
+        qp_G = np.identity(ndim)
+    qp_a = np.array(np.matmul(action.T,qp_G),dtype="float64")
     qp_C = np.array(-Ax.T,dtype="float64")
     qp_b = np.array(-bx,dtype="float64")
     meq = 0
