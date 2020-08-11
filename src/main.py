@@ -222,10 +222,10 @@ def main():
                 updates += 1
             print("train took {}".format(time.time() - t_st))
 
-        agent.save_value_funct(
-            args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
-            i_episode,
-            ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
+        #agent.save_value_funct(
+        #    args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
+        #    i_episode,
+        #    ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
         #runing evaluation episode
         greedy_numsteps = 0
         if i_episode % 2 == 0:

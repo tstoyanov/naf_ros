@@ -24,11 +24,12 @@ class ManipulateEnv(gym.Env):
     def __init__(self):
         super(ManipulateEnv, self).__init__()
 
-        self.goal = [-0.2, -0.5]
+        self.goal = np.array([-0.2, -0.5])
 
         #These seem to be here for the enjoyment of the reader only, what are theyused for?
         self.action_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
-        self.observation_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
+        obs_low = np.array([-1.89, -1.89, -1.89, -2.5, -2.5, -2.5, -1, -1])
+        self.observation_space = spaces.Box(low=obs_low, high=-obs_low, dtype=np.float32)
 
         self.action_scale = 10
         self.kd = 10
@@ -94,8 +95,8 @@ class ManipulateEnv(gym.Env):
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
     def _next_observation(self, data):
-        self.observation = data.e
-        self.de = data.de
+        self.e = np.array(data.e)
+        self.de = np.array(data.de)
         self.J = np.transpose(np.reshape(np.array(data.J_lower),[data.n_joints,data.n_constraints_lower]))
         self.A = np.transpose(np.reshape(np.array(data.J_upper),[data.n_joints,data.n_constraints_upper]))
         self.b = -np.reshape(np.array(data.b_upper),[data.n_constraints_upper,1])
@@ -103,6 +104,7 @@ class ManipulateEnv(gym.Env):
         self.q = np.reshape(np.array(data.q),[data.n_joints,1])
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.ddq_star = np.reshape(np.array(data.ddq_star),[data.n_joints,1])
+        self.observation = np.concatenate([np.squeeze(self.q), np.squeeze(self.dq), self.e-self.goal])
         self.fresh = True
 
     def step(self, action):
@@ -190,7 +192,7 @@ class ManipulateEnv(gym.Env):
         pass
 
     def calc_dist(self):
-        dist = np.linalg.norm(np.array(self.observation[0:2])-np.array(self.goal)) #   math.sqrt((self.observation[0]-self.goal[0]) ** 2 + (self.observation[1]-self.goal[1])  ** 2)
+        dist = np.linalg.norm(self.e-self.goal) #   math.sqrt((self.observation[0]-self.goal[0]) ** 2 + (self.observation[1]-self.goal[1])  ** 2)
         return dist
 
     def calc_shaped_reward(self):
