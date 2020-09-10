@@ -77,6 +77,9 @@ class Policy(nn.Module):
             num_outputs, num_outputs), diagonal=-1).unsqueeze(0))
         self.diag_mask = Variable(torch.diag(torch.diag(torch.ones(num_outputs, num_outputs))).unsqueeze(0))
 
+        #regularizer for covariance matrix
+        self.lam = 0.0001
+
     #@profile
     def forward(self, inputs):
         x, u = inputs
@@ -92,7 +95,7 @@ class Policy(nn.Module):
         L = self.L(x).view(-1, num_outputs, num_outputs)
         L = L * \
             self.tril_mask.expand_as(
-                L) + torch.exp(L) * self.diag_mask.expand_as(L)
+                L) + torch.exp(L) * self.diag_mask.expand_as(L) + self.lam*self.diag_mask.expand_as(L)
         P = torch.bmm(L, L.transpose(2, 1))
         if u is not None:
 
