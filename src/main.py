@@ -83,7 +83,7 @@ def main():
     else:
         env = gym.make(args.env_name)
 
-    writer = SummaryWriter(args.logdir+'/runs/')
+    writer = SummaryWriter(args.logdir+'/runs/sd{}_us_{}'.format(args.seed,args.updates_per_step))
 
     path = Path(args.logdir)
     if not path.exists():
@@ -238,6 +238,8 @@ def main():
             visits = []
             while True:
                 action = agent.select_action(state)
+                if args.project_actions:
+                    action = agent.select_proj_action(state, Ax_prev, bx_prev)
                 #action = torch.Tensor(
                 #    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
 
