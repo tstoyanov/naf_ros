@@ -34,7 +34,7 @@ def main():
                         help='Should we use an OU process to sample noise?')
     parser.add_argument('--constr_gauss_sample', type=bool, default=False,
                         help='Should we use constrained Gaussian sampling?')
-    parser.add_argument('--noise_scale', type=float, default=0.2, metavar='G',
+    parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
                         help='initial noise scale (default: 0.4)')
     parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
                         help='final noise scale (default: 0.05)')
@@ -76,7 +76,7 @@ def main():
     args = parser.parse_args()
 
     if args.env_name == '2DProblem':
-        env = ManipulateEnv()
+        env = ManipulateEnv(bEffort=False)
         print(args.action_scale)
         env.set_scale(args.action_scale)
         env.set_kd(args.kd)
@@ -126,14 +126,14 @@ def main():
     updates = 0
     
     #env.init_ros()
-    #env.reset()
+    env.stop()
 
     t_start = time.time()
 
     for i_episode in range(args.num_episodes+1):
         # -- reset environment for every episode --
         t_st = time.time()
-        state = torch.Tensor([env.reset()])
+        state = torch.Tensor([env.start()])
         print("reset took {}".format(time.time() - t_st))
 
         scale = (args.noise_scale - args.final_noise_scale) * max(0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
@@ -202,12 +202,15 @@ def main():
 
         train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
         rewards.append(episode_reward)
+        #trying out this?
+        env.stop()
+        t_st = time.time()
 
         #Training models
         if len(memory) >= args.batch_size and args.train_model:
             #env.reset()
             print("Training model")
-            env.step(torch.Tensor([[0,0]]))
+            #env.step(torch.Tensor([[0,0]]))
 
             t_st = time.time()
             for _ in range(args.updates_per_step*args.num_steps):
@@ -216,8 +219,9 @@ def main():
                 value_loss, reg_loss = agent.update_parameters(batch,optimize_feasible_mu=args.optimize_actions)
 
                 writer.add_scalar('loss/full', value_loss, updates)
-                writer.add_scalar('loss/value', value_loss-reg_loss, updates)
-                writer.add_scalar('loss/regularizer', reg_loss, updates)
+                if args.optimize_actions:
+                    writer.add_scalar('loss/value', value_loss-reg_loss, updates)
+                    writer.add_scalar('loss/regularizer', reg_loss, updates)
 
                 updates += 1
             print("train took {}".format(time.time() - t_st))
@@ -230,7 +234,11 @@ def main():
         greedy_numsteps = 0
         if i_episode % 2 == 0:
             #state = env.reset()
-            state = torch.Tensor([env.reset()])
+            if time.time() - t_st < 4:
+                print("waiting for reset...")
+                time.sleep(4.0)
+                print("DONE")
+            state = torch.Tensor([env.start()])
             Ax_prev = np.identity(env.action_space.shape[0])
             bx_prev = env.action_space.high
 
@@ -240,6 +248,7 @@ def main():
                 action = agent.select_action(state)
                 if args.project_actions:
                     action = agent.select_proj_action(state, Ax_prev, bx_prev)
+
                 #action = torch.Tensor(
                 #    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
 
@@ -259,9 +268,13 @@ def main():
             test_writer.writerow(np.concatenate(([episode_reward], visits), axis=None))
 
             rewards.append(episode_reward)
+
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
             print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
             print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
+
+            env.stop()
+            time.sleep(4.0) #wait for reset
 
 
             

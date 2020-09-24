@@ -23,7 +23,14 @@ def project_action_cov(action,Ax,bx,P):
         qp_G = np.array(P,dtype="float64")
     else:
         print("THIS SHOULD NEVER HAPPEN!")
-        qp_G = np.identity(ndim)
+        print(P)
+        #if it does happen, let's inflate the matrix a bit
+        w,v = np.linalg.eig(P)
+        w[w<0] = 0.001
+        W = np.diag(w)
+        qp_G = np.matmul(v, np.matmul(W,v.T))
+        qp_G = np.array(qp_G,dtype="float64")
+        print(qp_G)
     qp_a = np.array(np.matmul(action.T,qp_G),dtype="float64")
     qp_C = np.array(-Ax.T,dtype="float64")
     qp_b = np.array(-bx,dtype="float64")

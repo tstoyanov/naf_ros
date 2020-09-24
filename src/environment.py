@@ -21,10 +21,11 @@ from halfspaces import qhull
 class ManipulateEnv(gym.Env):
     """Manipulation Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
-    def __init__(self):
+    def __init__(self,bEffort=True):
         super(ManipulateEnv, self).__init__()
 
         self.goal = np.array([-0.2, -0.5])
+        self.bEffort = bEffort
 
         #These seem to be here for the enjoyment of the reader only, what are theyused for?
         self.action_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
@@ -35,14 +36,17 @@ class ManipulateEnv(gym.Env):
         self.kd = 10
 
         rospy.init_node('DRL_node', anonymous=True)
-        #queue size = 1 only keeps most recent message
-        rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation, queue_size=1)
         #queue_size = None forces synchronous publishing
         self.pub = rospy.Publisher('/ee_rl/act', DesiredErrorDynamicsMsg, queue_size=None)
         self.effort_pub = rospy.Publisher('/position_joint_trajectory_controller/command', JointTrajectory, queue_size=1)
+        self.velocity_pub = rospy.Publisher('/velocity_joint_trajectory_controller/command', JointTrajectory, queue_size=1)
         self.rate = rospy.Rate(10) #10Hz
-        #self.set_primitives()
-        #self.set_tasks()
+        self.set_primitives()
+        self.set_tasks()
+
+        #queue size = 1 only keeps most recent message
+        self.sub = rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation, queue_size=1)
+
         self.rate.sleep()
         time.sleep(1) #wait for ros to start up
         #HOW ugly can you be?
@@ -61,7 +65,11 @@ class ManipulateEnv(gym.Env):
     def set_primitives(self):
         #print("setting primitves")
         #set all primitives into hiqp
-        hiqp_primitve_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_primitives', SetPrimitives)
+        if(self.bEffort):
+            hiqp_primitve_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_primitives', SetPrimitives)
+        else:
+            hiqp_primitve_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_primitives', SetPrimitives)
+
         ee_prim = Primitive(name='ee_point',type='point',frame_id='three_dof_planar_eef',visible=True,color=[1,0,0,1],parameters=[0,0,0])
         goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])
         back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,-0.8])
@@ -73,7 +81,11 @@ class ManipulateEnv(gym.Env):
     def set_tasks(self):
         #set the tasks to hiqp
         #print("setting tasks")
-        hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_tasks', SetTasks)
+        if self.bEffort:
+            hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_tasks', SetTasks)
+        else:
+            hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_tasks', SetTasks)
+
         cage_front = Task(name='ee_cage_front',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < front_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
@@ -90,8 +102,8 @@ class ManipulateEnv(gym.Env):
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
                           dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state']) #, '/home/aass/hiqp_logs/'
         redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
-                          def_params=['TDefFullPose', '-0.3', '-0.3', '-0.25'],
-                          dyn_params=['TDynPD', '0.5', '1.5'])
+                          def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
+                          dyn_params=['TDynPD', '1.0', '2.0'])
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
     def _next_observation(self, data):
@@ -105,6 +117,7 @@ class ManipulateEnv(gym.Env):
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.ddq_star = np.reshape(np.array(data.ddq_star),[data.n_joints,1])
         self.observation = np.concatenate([np.squeeze(self.q), np.squeeze(self.dq), self.e-self.goal])
+        #print("obs!")
         self.fresh = True
 
     def step(self, action):
@@ -138,11 +151,90 @@ class ManipulateEnv(gym.Env):
         reward, done = self.calc_shaped_reward()
         return self.observation, reward, done, Ax, bx
 
+    def stop(self):
+        self.episode_trace.clear()
+        self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
+        joints = ['three_dof_planar_joint1', 'three_dof_planar_joint2', 'three_dof_planar_joint3']
+        if self.bEffort:
+            remove_tasks = rospy.ServiceProxy('/hiqp_joint_effort_controller/remove_tasks', RemoveTasks)
+            #remove_tasks = rospy.ServiceProxy('/hiqp_joint_effort_controller/remove_all_tasks', RemoveAllTasks)
+        else:
+            remove_tasks = rospy.ServiceProxy('/hiqp_joint_velocity_controller/remove_tasks', RemoveTasks)
+            #remove_tasks = rospy.ServiceProxy('/hiqp_joint_velocity_controller/remove_all_tasks', RemoveAllTasks)
+        remove_tasks(['ee_rl'])
+        #remove_tasks()
+        if self.sub is not None:
+            self.sub.unregister()
+        cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)
+        if self.bEffort:
+            resp = cs({'position_joint_trajectory_controller'},{'hiqp_joint_effort_controller'},2,True,0.1)
+            self.effort_pub.publish(JointTrajectory(joint_names=joints, points=[
+                JointTrajectoryPoint(positions=[0.3, -0.3, -0.25], time_from_start=rospy.Duration(4.0))]))
+        else:
+            resp = cs({'velocity_joint_trajectory_controller'},{'hiqp_joint_velocity_controller'},2,True,0.1)
+            self.velocity_pub.publish(JointTrajectory(joint_names=joints,points=[
+                JointTrajectoryPoint(positions=[0.3,-0.3,-0.25],time_from_start=rospy.Duration(4.0))]))
+
+    def start(self):
+        cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)
+        if self.bEffort:
+            resp = cs({'hiqp_joint_effort_controller'},{'position_joint_trajectory_controller'},2,True,0.1)
+            #hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_effort_controller/set_tasks', SetTasks)
+        else:
+            resp = cs({'hiqp_joint_velocity_controller'},{'velocity_joint_trajectory_controller'},2,True,0.1)
+            #hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_tasks', SetTasks)
+        #rl_task = Task(name='ee_rl',priority=2,visible=True,active=True,monitored=True,
+        #               def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
+        #               dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state'])
+        #hiqp_task_srv([rl_task])
+        self.set_tasks()
+        #wait for fresh state
+        self.fresh = False
+        #queue size = 1 only keeps most recent message
+        self.sub = rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation, queue_size=1)
+
+        while not self.fresh:
+            self.rate.sleep()
+        return self.observation  # reward, done, info can't be included
+
+    def reset_vel(self):
+        self.episode_trace.clear()
+        self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
+
+        cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)
+        cs_unload = rospy.ServiceProxy('/controller_manager/unload_controller', UnloadController)
+        cs_load = rospy.ServiceProxy('/controller_manager/load_controller', LoadController)
+        remove_tasks = rospy.ServiceProxy('/hiqp_joint_velocity_controller/remove_all_tasks', RemoveAllTasks)
+        #print('removing tasks')
+        remove_tasks()
+        resp = cs({'velocity_joint_trajectory_controller'},{'hiqp_joint_velocity_controller'},2,True,0.1)
+        cs_unload('hiqp_joint_velocity_controller')
+        print('setting to home pose')
+        joints = ['three_dof_planar_joint1','three_dof_planar_joint2','three_dof_planar_joint3']
+        self.velocity_pub.publish(JointTrajectory(joint_names=joints,points=[JointTrajectoryPoint(positions=[0.3,-0.3,-0.25],time_from_start=rospy.Duration(4.0))]))
+        time.sleep(4.5)
+        #restart hiqp
+        cs_load('hiqp_joint_velocity_controller')
+        #print("restarting controller")
+        resp = cs({'hiqp_joint_velocity_controller'},{'velocity_joint_trajectory_controller'},2,True,0.1)
+        #set tasks to controller
+        self.set_primitives()
+        self.set_tasks()
+
+        #wait for fresh state
+        self.fresh = False
+        while not self.fresh:
+            self.rate.sleep()
+        return self.observation  # reward, done, info can't be included
+
     def reset(self):
+
+        if not self.bEffort:
+            return self.reset_vel()
+
         self.episode_trace.clear()
         self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
         # Reset the state of the environment to an initial state
-        # subprocess.call("~/Workspaces/catkin_ws/src/panda_demos/panda_table_launch/scripts/sim_reset_episode_fast.sh", shell=True)
 
         #print("Resetting environment")
         cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)
@@ -150,7 +242,6 @@ class ManipulateEnv(gym.Env):
         cs_load = rospy.ServiceProxy('/controller_manager/load_controller', LoadController)
         remove_tasks = rospy.ServiceProxy('/hiqp_joint_effort_controller/remove_all_tasks', RemoveAllTasks)
         #print('removing tasks')
-        #remove_tasks(['ee_cage_back','ee_cage_left','ee_cage_right','ee_cage_front','ee_rl','full_pose'])
         remove_tasks()
         #time.sleep(1)
 

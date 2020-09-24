@@ -78,7 +78,7 @@ class Policy(nn.Module):
         self.diag_mask = Variable(torch.diag(torch.diag(torch.ones(num_outputs, num_outputs))).unsqueeze(0))
 
         #regularizer for covariance matrix
-        self.lam = 0.0001
+        self.lam = 0.001
 
     #@profile
     def forward(self, inputs):
@@ -171,8 +171,8 @@ class NAF:
         means, state_action_values, _, _ = self.model((state_batch, action_batch))
 
         loss = MSELoss(state_action_values, expected_state_action_values)
-        regularizer_loss = RegLoss(means,batch.Ax,batch.bx)
         if(optimize_feasible_mu):
+            regularizer_loss = RegLoss(means, batch.Ax, batch.bx)
             loss = loss + regularizer_loss
 
         self.optimizer.zero_grad()
@@ -182,7 +182,10 @@ class NAF:
 
         soft_update(self.target_model, self.model, self.tau)
 
-        return loss.item(), regularizer_loss.item()
+        if(optimize_feasible_mu):
+            return loss.item(), regularizer_loss.item()
+        else:
+            return loss.item(), 0
 
     def save_model(self, env_name, batch_size, episode, suffix="", model_path=None):
         if not os.path.exists('models/'):
