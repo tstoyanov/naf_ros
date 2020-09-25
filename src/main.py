@@ -56,6 +56,8 @@ def main():
                         help='hidden size (default: 128)')
     parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
                     help='model updates per simulator step (default: 50)')
+    parser.add_argument('--run_id', type=int, default=0, metavar='N',
+                        help='increment this externally to re-run same parameters multiple times')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
     parser.add_argument('--save_agent', type=bool, default=True,
@@ -83,17 +85,18 @@ def main():
     else:
         env = gym.make(args.env_name)
 
-    writer = SummaryWriter(args.logdir+'/runs/sd{}_us_{}'.format(args.seed,args.updates_per_step))
+    basename = 'sd{}_us_{}_ns_{}_run_{}'.format(args.seed,args.updates_per_step,args.noise_scale,args.run_id)
+    writer = SummaryWriter(args.logdir+'/runs/'+basename)
 
     path = Path(args.logdir)
     if not path.exists():
         raise argparse.ArgumentTypeError("Parameter {} is not a valid path".format(path))
 
-    csv_train = open(args.logdir+'/kd{}_sd{}_as{}_us_{}_train.csv'.format(args.kd, args.seed,args.action_scale,args.updates_per_step), 'w',
+    csv_train = open(args.logdir+'/'+basename+'_train.csv', 'w',
               newline='')
     train_writer = csv.writer(csv_train, delimiter=' ')
 
-    csv_test = open(args.logdir+'/kd{}_sd{}_as{}_us_{}_test.csv'.format(args.kd, args.seed, args.action_scale, args.updates_per_step), 'w',
+    csv_test = open(args.logdir+'/'+basename+'_test.csv', 'w',
                   newline='')
     test_writer = csv.writer(csv_test, delimiter=' ')
 
@@ -112,12 +115,11 @@ def main():
 
     # -- load existing model --
     if args.load_agent:
-        agent.load_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step), model_path=args.logdir)
-        print("agent: naf_{}_{}_{}_{}, is loaded".format(args.env_name, args.batch_size, args.num_episodes, '.pth'))
-
+        agent.load_model(args.env_name, args.batch_size, args.num_episodes, basename+'.pth', model_path=args.logdir)
+        print('loaded agent '+basename+' from '+args.logdir)
     # -- load experience buffer --
     if args.load_exp:
-        with open(args.logdir+'/exp_buffer_sd{}_as{}_us_{}.pk'.format(args.seed,args.action_scale,args.updates_per_step), 'rb') as input:
+        with open(args.logdir+'/'+basename+'.pk', 'rb') as input:
             memory.memory = pickle.load(input)
             memory.position = len(memory)
 
@@ -281,8 +283,8 @@ def main():
 
     #-- saves model --
     if args.save_agent:
-        agent.save_model(args.env_name, args.batch_size, args.num_episodes, 'sd{}_as{}_us_{}.pth'.format(args.seed,args.action_scale,args.updates_per_step))
-        with open(args.logdir+'/exp_buffer_sd{}_as{}_us_{}.pk'.format(args.seed,args.action_scale,args.updates_per_step), 'wb') as output:
+        agent.save_model(args.env_name, args.batch_size, args.num_episodes, basename+'.pth')
+        with open(args.logdir+'/'+basename+'.pk', 'wb') as output:
             pickle.dump(memory.memory, output, pickle.HIGHEST_PROTOCOL)
 
     print('Training ended after {} minutes'.format((time.time() - t_start)/60))
