@@ -46,13 +46,16 @@ class ManipulateEnv(gym.Env):
 
         #queue size = 1 only keeps most recent message
         self.sub = rospy.Subscriber("/ee_rl/state", StateMsg, self._next_observation, queue_size=1)
+        
+        #monitor constraints      
+        self.sub_monitor = rospy.Subscriber("/hiqp_joint_velocity_controller/task_measures", TaskMeasures, self._constraint_monitor, queue_size=1)
 
         self.rate.sleep()
         time.sleep(1) #wait for ros to start up
         #HOW ugly can you be?
         self.fresh=False
 
-        csv_train = open("/home/tsv/hiqp_logs/constraints.csv", 'w', newline='')
+        csv_train = open("/home/quantao/hiqp_logs/constraints.csv", 'w', newline='')
         self.twriter = csv.writer(csv_train, delimiter=' ')
         self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
 
@@ -72,10 +75,10 @@ class ManipulateEnv(gym.Env):
 
         ee_prim = Primitive(name='ee_point',type='point',frame_id='three_dof_planar_eef',visible=True,color=[1,0,0,1],parameters=[0,0,0])
         goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])
-        back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,-0.8])
-        front_plane = Primitive(name='front_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,0.8])
-        left_plane = Primitive(name='left_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,-0.8])
-        right_plane = Primitive(name='right_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,0.8])
+        back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,-0.6])
+        front_plane = Primitive(name='front_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,0.6])
+        left_plane = Primitive(name='left_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,-0.6])
+        right_plane = Primitive(name='right_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,0.6])
         hiqp_primitve_srv([ee_prim, back_plane, front_plane, left_plane, right_plane, goal_prim])
 
     def set_tasks(self):
@@ -86,23 +89,23 @@ class ManipulateEnv(gym.Env):
         else:
             hiqp_task_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_tasks', SetTasks)
 
-        cage_front = Task(name='ee_cage_front',priority=1,visible=True,active=True,monitored=True,
+        cage_front = Task(name='ee_cage_front',priority=0,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < front_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_back = Task(name='ee_cage_back',priority=1,visible=True,active=True,monitored=True,
+        cage_back = Task(name='ee_cage_back',priority=0,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point > back_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_left = Task(name='ee_cage_left',priority=1,visible=True,active=True,monitored=True,
+        cage_left = Task(name='ee_cage_left',priority=0,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point > left_plane'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        cage_right = Task(name='ee_cage_right',priority=1,visible=True,active=True,monitored=True,
+        cage_right = Task(name='ee_cage_right',priority=0,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < right_plane'],
-                          dyn_params=['TDynPD', '1.0', '2.0'])
-        rl_task = Task(name='ee_rl',priority=2,visible=True,active=True,monitored=True,
+                          dyn_params=['TDynPD', '16.0', '9.0'])
+        rl_task = Task(name='ee_rl',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
                           dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state']) #, '/home/aass/hiqp_logs/'
-        redundancy = Task(name='full_pose',priority=3,visible=True,active=True,monitored=True,
-                          def_params=['TDefFullPose', '0.3', '-0.3', '-0.25'],
+        redundancy = Task(name='full_pose',priority=2,visible=True,active=True,monitored=True,
+                          def_params=['TDefFullPose', '0.3', '-0.8', '-1.3'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
         hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
@@ -119,6 +122,42 @@ class ManipulateEnv(gym.Env):
         self.observation = np.concatenate([np.squeeze(self.q), np.squeeze(self.dq), self.e-self.goal])
         #print("obs!")
         self.fresh = True
+        
+    def _constraint_monitor(self, data):
+        violate_thre = 0.001
+        for task in data.task_measures:
+            if task.task_name == "ee_cage_back" and task.e[0] < 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************ee_cage_back violated!******", task.e[0])
+            
+            if task.task_name == "ee_cage_front" and task.e[0] > 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************ee_cage_front violated!******", task.e[0])
+            
+            if task.task_name == "ee_cage_left" and task.e[0] < 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************ee_cage_left violated!******", task.e[0])
+            
+            if task.task_name == "ee_cage_right" and task.e[0] > 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************ee_cage_right violated!******", task.e[0])
+                
+            if task.task_name == "jnt1_limits":
+                if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
+                    print("*************jnt1_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
+                    
+            if task.task_name == "jnt2_limits":
+                if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
+                    print("*************jnt2_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
+                    
+            if task.task_name == "jnt3_limits":
+                if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
+                    print("*************jnt3_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
+                    
+            if task.task_name == "self_collide" and task.e[0] < 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************self_collide violated!******", task.e[0])
+                    
 
     def step(self, action):
         # Execute one time step within the environment
@@ -169,11 +208,11 @@ class ManipulateEnv(gym.Env):
         if self.bEffort:
             resp = cs({'position_joint_trajectory_controller'},{'hiqp_joint_effort_controller'},2,True,0.1)
             self.effort_pub.publish(JointTrajectory(joint_names=joints, points=[
-                JointTrajectoryPoint(positions=[0.3, -0.3, -0.25], time_from_start=rospy.Duration(4.0))]))
+                JointTrajectoryPoint(positions=[0.3, -0.8,-1.3], time_from_start=rospy.Duration(4.0))]))
         else:
             resp = cs({'velocity_joint_trajectory_controller'},{'hiqp_joint_velocity_controller'},2,True,0.1)
             self.velocity_pub.publish(JointTrajectory(joint_names=joints,points=[
-                JointTrajectoryPoint(positions=[0.3,-0.3,-0.25],time_from_start=rospy.Duration(4.0))]))
+                JointTrajectoryPoint(positions=[0.3,-0.8,-1.3],time_from_start=rospy.Duration(4.0))]))
 
     def start(self):
         cs = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController)

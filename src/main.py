@@ -18,6 +18,7 @@ import csv
 from naf import NAF
 from ounoise import OUNoise
 from replay_memory import Transition, ReplayMemory
+from prioritized_replay_memory import PrioritizedReplayMemory
 from environment import ManipulateEnv
 
 import quad
@@ -38,7 +39,7 @@ def main():
                         help='initial noise scale (default: 0.4)')
     parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
                         help='final noise scale (default: 0.05)')
-    parser.add_argument('--project_actions', type=bool, default=False,
+    parser.add_argument('--project_actions', type=bool, default=True,##################False
                         help='project to feasible actions only during training')
     parser.add_argument('--optimize_actions', type=bool, default=False,
                         help='add loss to objective')
@@ -68,12 +69,14 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--logdir', default="",
+    parser.add_argument('--logdir', default="/home/quantao/hiqp_logs",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
                         help='scale applied to the normalized actions (default: 10)')
     parser.add_argument('--kd', type=float, default=0.0, metavar='N',
                         help='derivative gain for ee_rl (default: 10)')
+    parser.add_argument('--prioritized_replay_memory', type=bool, default=True,
+                        help='prioritized experience replay')
 
     args = parser.parse_args()
 
@@ -110,7 +113,10 @@ def main():
                 env.observation_space.shape[0], env.action_space)
 
     # -- declare memory buffer and random process N
-    memory = ReplayMemory(args.replay_size)
+    if args.prioritized_replay_memory:
+        memory = PrioritizedReplayMemory(args.replay_size, 0.8)
+    else:
+        memory = ReplayMemory(args.replay_size)
     ounoise = OUNoise(env.action_space.shape[0])
 
     # -- load existing model --
@@ -171,6 +177,7 @@ def main():
                     action = agent.select_proj_action(state,Ax_prev,bx_prev)
 
             t_st0 = time.time()
+            #print(">>>>>>action:", action)
             next_state, reward, done, Ax, bx = env.step(action)
             t_act += time.time() - t_st0
             #print("act took {}".format(time.time() - t_st0))
@@ -216,7 +223,10 @@ def main():
 
             t_st = time.time()
             for _ in range(args.updates_per_step*args.num_steps):
-                transitions = memory.sample(args.batch_size)
+                if args.prioritized_replay_memory:
+                    transitions = memory.sample(args.batch_size, 0.5)
+                else:
+                    transitions = memory.sample(args.batch_size)
                 batch = Transition(*zip(*transitions))
                 value_loss, reg_loss = agent.update_parameters(batch,optimize_feasible_mu=args.optimize_actions)
 

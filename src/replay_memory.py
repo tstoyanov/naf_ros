@@ -20,7 +20,8 @@ class ReplayMemory(object):
 
     #@profile
     def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
+        transitions = random.sample(self.memory, batch_size)
+        return transitions
 
     def __len__(self):
         return len(self.memory)

@@ -23,7 +23,7 @@ def project_action_cov(action,Ax,bx,P):
         qp_G = np.array(P,dtype="float64")
     else:
         print("THIS SHOULD NEVER HAPPEN!")
-        print(P)
+        print("P:", P)
         #if it does happen, let's inflate the matrix a bit
         w,v = np.linalg.eig(P)
         w[w<0] = 0.001
