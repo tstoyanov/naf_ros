@@ -26,6 +26,7 @@ class ManipulateEnv(gym.Env):
 
         self.goal = np.array([-0.2, -0.5])
         self.bEffort = bEffort
+        self.bConstraint = False
 
         #These seem to be here for the enjoyment of the reader only, what are theyused for?
         self.action_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
@@ -75,12 +76,20 @@ class ManipulateEnv(gym.Env):
             hiqp_primitve_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_primitives', SetPrimitives)
 
         ee_prim = Primitive(name='ee_point',type='point',frame_id='three_dof_planar_eef',visible=True,color=[1,0,0,1],parameters=[0,0,0])
-        goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])
+        goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])       
         back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,-0.6])
         front_plane = Primitive(name='front_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,0.6])
         left_plane = Primitive(name='left_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,-0.6])
         right_plane = Primitive(name='right_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,0.6])
-        hiqp_primitve_srv([ee_prim, back_plane, front_plane, left_plane, right_plane, goal_prim])
+        # four corners      
+        corner1 = Primitive(name='corner1',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.6,0.6,0,0.02])
+        corner2 = Primitive(name='corner2',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.6,-0.6,0,0.02])
+        corner3 = Primitive(name='corner3',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.6,-0.6,0,0.02])
+        corner4 = Primitive(name='corner4',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.6,0.6,0,0.02])
+        # obstacle
+        obs_cylinder = Primitive(name='obs_cylinder',type='cylinder',frame_id='world',visible=True,color=[1.0,0.0,0.0,0.5],parameters=[0,0,1,0.4,-0.5,0,0.02,0.1])
+
+        hiqp_primitve_srv([ee_prim, back_plane, front_plane, left_plane, right_plane, goal_prim, corner1, corner2, corner3, corner4, obs_cylinder])
 
     def set_tasks(self):
         #set the tasks to hiqp
@@ -102,13 +111,16 @@ class ManipulateEnv(gym.Env):
         cage_right = Task(name='ee_cage_right',priority=0,visible=True,active=True,monitored=True,
                           def_params=['TDefGeomProj','point', 'plane', 'ee_point < right_plane'],
                           dyn_params=['TDynPD', '16.0', '9.0'])
+        cylinder_avoidance = Task(name='cylinder_avoidance',priority=0,visible=True,active=True,monitored=True,
+                          def_params=['TDefGeomProj','point', 'cylinder', 'ee_point > obs_cylinder'],
+                          dyn_params=['TDynPD', '1.0', '2.0'])      
         rl_task = Task(name='ee_rl',priority=1,visible=True,active=True,monitored=True,
                           def_params=['TDefRL2DSpace','1','0','0','0','1','0','ee_point'],
                           dyn_params=['TDynAsyncPolicy', '{}'.format(self.kd), 'ee_rl/act', 'ee_rl/state']) #, '/home/aass/hiqp_logs/'
         redundancy = Task(name='full_pose',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefFullPose', '0.3', '-0.8', '-1.3'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
+        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,cylinder_avoidance,rl_task,redundancy])
 
     def _next_observation(self, data):
         self.e = np.array(data.e)
@@ -125,41 +137,61 @@ class ManipulateEnv(gym.Env):
         self.fresh = True
         
     def _constraint_monitor(self, data):
-        violate_thre = 0.001
+        violate_thre = 0.000001
+        penalty_scale = 10000
+                
         for task in data.task_measures:
             if task.task_name == "ee_cage_back" and task.e[0] < 0:
                 if np.abs(task.e[0]) > violate_thre:
                     print("*************ee_cage_back violated!******", task.e[0])
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
             
             if task.task_name == "ee_cage_front" and task.e[0] > 0:
                 if np.abs(task.e[0]) > violate_thre:
                     print("*************ee_cage_front violated!******", task.e[0])
-            
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
+       
             if task.task_name == "ee_cage_left" and task.e[0] < 0:
                 if np.abs(task.e[0]) > violate_thre:
                     print("*************ee_cage_left violated!******", task.e[0])
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
             
             if task.task_name == "ee_cage_right" and task.e[0] > 0:
                 if np.abs(task.e[0]) > violate_thre:
                     print("*************ee_cage_right violated!******", task.e[0])
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
                 
             if task.task_name == "jnt1_limits":
                 if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
                     print("*************jnt1_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
+                    self.bConstraint = True
                     
             if task.task_name == "jnt2_limits":
                 if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
                     print("*************jnt2_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
+                    self.bConstraint = True
                     
             if task.task_name == "jnt3_limits":
                 if task.e[0] < 0 or task.e[1] > 0 or task.e[2] < 0 or task.e[3] > 0 or task.e[4] < 0 or task.e[5] > 0:
                     print("*************jnt3_limits violated!***", task.e[0], task.e[1],task.e[2],task.e[3],task.e[4],task.e[5])
-                    
+                    self.bConstraint = True    
+                
             if task.task_name == "self_collide" and task.e[0] < 0:
                 if np.abs(task.e[0]) > violate_thre:
                     print("*************self_collide violated!******", task.e[0])
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
                     
-
+            if task.task_name == "cylinder_avoidance" and task.e[0] < 0:
+                if np.abs(task.e[0]) > violate_thre:
+                    print("*************cylinder_avoidance violated!******", task.e[0])
+                    self.reward -= penalty_scale*np.abs(task.e[0])
+                    self.bConstraint = True
+               
     def step(self, action):
         # Execute one time step within the environment
         a = -action.numpy()[0] * self.action_scale
@@ -188,10 +220,15 @@ class ManipulateEnv(gym.Env):
             self.episode_trace.append((Ax,bx,n_infeasible))
             #print(feasible)
 
-        reward, done = self.calc_shaped_reward()
-        return self.observation, reward, done, Ax, bx
+        if self.bConstraint:
+            done = True
+        else:
+            self.reward, done = self.calc_shaped_reward()
+
+        return self.observation, self.reward, done, Ax, bx
 
     def stop(self):
+        self.bConstraint = False
         self.episode_trace.clear()
         self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
         joints = ['three_dof_planar_joint1', 'three_dof_planar_joint2', 'three_dof_planar_joint3']
