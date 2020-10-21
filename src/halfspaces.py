@@ -65,8 +65,19 @@ def plot_halfspace_2d(halfspaces,hs,feasible,signs):
     #plt.plot(hs.dual_points[:,0],hs.dual_points[:,1], 'rx')
     plt.show()
 
-
+def check_coplane(A):
+    epsilon = 0.001
+    n = len(A)   
+    for i in range(n-1):
+        for j in range(i+1, n):
+            if np.abs(np.dot(A[i], A[j])/(np.linalg.norm(A[i])*np.linalg.norm(A[j]))) > 1 - epsilon:
+                print("A[{}] parallel to A[{}]".format(i, j))
+    
 def qhull(A,J,b):
+    # check co-hyperplanes
+    if False:
+        check_coplane(A)
+    
     n_jnts = np.shape(A[1])[0]
     n_constraints = np.shape(A)[0]
     n_action_dim = np.shape(J)[0]
@@ -74,7 +85,7 @@ def qhull(A,J,b):
     Ax = np.zeros((1, n_action_dim))
     bx = np.zeros(1)
 
-    #construct an LPto find a feasible point in upper space
+    #construct an LP to find a feasible point in upper space
     norm_vector = np.reshape(np.linalg.norm(A, axis=1),(n_constraints, 1))
     c = np.zeros((n_jnts+1,))
     c[-1] = -1
@@ -83,8 +94,16 @@ def qhull(A,J,b):
     upper_feasible = linprog(c,A_ub=A_up, b_ub=b, bounds=(None, None))
 
     if(upper_feasible.success and upper_feasible.x[-1]>0):
-        #check = A.dot(second_feasible.x[:-1]) - b #should be < 0
+        #check = A.dot(upper_feasible.x[:-1]) - b #should be < 0
+        check = A.dot(np.reshape(upper_feasible.x[:-1],[n_jnts, 1])) - b #should be < 0
+        if not all(check):
+            print("unsatisfied checks are:", [i for i, value in enumerate(check) if value > 0])
         feasible_point = upper_feasible.x[:-1]
+        #feasible_radius = upper_feasible.x[-1]
+
+        # distance of feasible point to each constraint 
+        #distance = np.abs(check)/norm_vector
+        #print("distance:", distance)
     else:
         print("infeasible (upper)")
         return False, Ax, bx

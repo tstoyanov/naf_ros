@@ -19,6 +19,8 @@ def project_action_cov(action,Ax,bx,P):
         print("infeasible target set")
         return np.zeros(np.shape(action))
     ndim = np.shape(action)[0]
+    
+    # P is symmetric positive definite matrix
     if np.all(np.linalg.eigvals(P) > 0):
         qp_G = np.array(P,dtype="float64")
     else:

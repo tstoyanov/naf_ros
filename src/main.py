@@ -35,7 +35,7 @@ def main():
                         help='Should we use an OU process to sample noise?')
     parser.add_argument('--constr_gauss_sample', type=bool, default=False,
                         help='Should we use constrained Gaussian sampling?')
-    parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
+    parser.add_argument('--noise_scale', type=float, default=0.4, metavar='G',
                         help='initial noise scale (default: 0.4)')
     parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
                         help='final noise scale (default: 0.05)')
@@ -51,7 +51,7 @@ def main():
                         help='batch size (default: 512)')
     parser.add_argument('--num_steps', type=int, default=300, metavar='N',
                         help='max episode length (default: 300)')
-    parser.add_argument('--num_episodes', type=int, default=50, metavar='N',
+    parser.add_argument('--num_episodes', type=int, default=100, metavar='N',
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
@@ -75,7 +75,7 @@ def main():
                         help='scale applied to the normalized actions (default: 10)')
     parser.add_argument('--kd', type=float, default=0.0, metavar='N',
                         help='derivative gain for ee_rl (default: 10)')
-    parser.add_argument('--prioritized_replay_memory', type=bool, default=True,
+    parser.add_argument('--prioritized_replay_memory', type=bool, default=False,
                         help='prioritized experience replay')
 
     args = parser.parse_args()
@@ -128,7 +128,8 @@ def main():
         with open(args.logdir+'/'+basename+'.pk', 'rb') as input:
             memory.memory = pickle.load(input)
             memory.position = len(memory)
-
+    
+    violations = []
     rewards = []
     total_numsteps = 0
     updates = 0
@@ -153,6 +154,7 @@ def main():
             0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
         ounoise.reset()
 
+        episode_violation = 0
         episode_reward = 0
         visits = []
         Ax_prev = np.identity(env.action_space.shape[0])
@@ -176,8 +178,8 @@ def main():
                     #noise-free run
                     action = agent.select_proj_action(state,Ax_prev,bx_prev)
 
+            # env step
             t_st0 = time.time()
-            #print(">>>>>>action:", action)
             next_state, reward, done, Ax, bx = env.step(action)
             t_act += time.time() - t_st0
             #print("act took {}".format(time.time() - t_st0))
@@ -202,15 +204,18 @@ def main():
 
             state = next_state
 
-            if done or total_numsteps % args.num_steps == 0:
+            if done or total_numsteps % args.num_steps == 0 or env.bConstraint:
+                if env.bConstraint:
+                    episode_violation += 1
                 break
 
         print("Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
                                                                          episode_reward,time.time()-t_st,t_act,t_project))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
-        train_writer.writerow(np.concatenate(([episode_reward],visits),axis=None))
+        train_writer.writerow(np.concatenate(([episode_reward],[episode_violation],visits),axis=None))
         rewards.append(episode_reward)
+        violations.append(episode_violation)
         #trying out this?
         env.stop()
         t_st = time.time()
@@ -254,6 +259,7 @@ def main():
             Ax_prev = np.identity(env.action_space.shape[0])
             bx_prev = env.action_space.high
 
+            episode_violation = 0
             episode_reward = 0
             visits = []
             while True:
@@ -273,13 +279,16 @@ def main():
 
                 state = torch.Tensor([next_state])
 
-                if done or greedy_numsteps % args.num_steps == 0:
+                if done or greedy_numsteps % args.num_steps == 0 or env.bConstraint:
+                    if env.bConstraint:
+                        episode_violation += 1
                     break
                 
             writer.add_scalar('reward/test', episode_reward, i_episode)
-            test_writer.writerow(np.concatenate(([episode_reward], visits), axis=None))
+            test_writer.writerow(np.concatenate(([episode_reward], [episode_violation], visits), axis=None))
 
             rewards.append(episode_reward)
+            violations.append(episode_violation)
 
             print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
             print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
@@ -288,8 +297,6 @@ def main():
             env.stop()
             time.sleep(4.0) #wait for reset
 
-
-            
 
     #-- saves model --
     if args.save_agent:
@@ -302,6 +309,7 @@ def main():
     print('Mean reward: {}'.format(np.mean(rewards)))
     print('Max reward: {}'.format(np.max(rewards)))
     print('Min reward: {}'.format(np.min(rewards)))
+    print('Total constraint violations: {} out of {} episodes'.format(np.sum(violations), args.num_episodes))
     
 
 if __name__ == '__main__':
