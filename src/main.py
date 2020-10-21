@@ -35,23 +35,23 @@ def main():
                         help='Should we use an OU process to sample noise?')
     parser.add_argument('--constr_gauss_sample', type=bool, default=False,
                         help='Should we use constrained Gaussian sampling?')
-    parser.add_argument('--noise_scale', type=float, default=0.8, metavar='G',
-                        help='initial noise scale (default: 0.4)')
-    parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
-                        help='final noise scale (default: 0.05)')
-    parser.add_argument('--project_actions', type=bool, default=True,##################False
+    parser.add_argument('--noise_scale', type=float, default=0.5, metavar='G',
+                        help='initial noise scale (default: 0.5)')
+    parser.add_argument('--final_noise_scale', type=float, default=0.2, metavar='G',
+                        help='final noise scale (default: 0.2)')
+    parser.add_argument('--project_actions', type=bool, default=False,
                         help='project to feasible actions only during training')
     parser.add_argument('--optimize_actions', type=bool, default=False,
                         help='add loss to objective')
-    parser.add_argument('--exploration_end', type=int, default=45, metavar='N',
+    parser.add_argument('--exploration_end', type=int, default=100, metavar='N',
                         help='number of episodes with noise (default: 100)')
-    parser.add_argument('--seed', type=int, default=54123, metavar='N',
+    parser.add_argument('--seed', type=int, default=4, metavar='N',
                         help='random seed (default: 4)')
     parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                         help='batch size (default: 512)')
     parser.add_argument('--num_steps', type=int, default=300, metavar='N',
                         help='max episode length (default: 300)')
-    parser.add_argument('--num_episodes', type=int, default=50, metavar='N',
+    parser.add_argument('--num_episodes', type=int, default=5000, metavar='N',
                         help='number of episodes (default: 5000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
@@ -69,20 +69,23 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--logdir', default="/home/quantao/hiqp_logs",
+    parser.add_argument('--logdir', default="/home/qoyg/hiqp_logs",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
-                        help='scale applied to the normalized actions (default: 10)')
+                        help='scale applied to the normalized actions (default: 1.0)')
     parser.add_argument('--kd', type=float, default=0.0, metavar='N',
-                        help='derivative gain for ee_rl (default: 10)')
+                        help='derivative gain for ee_rl (default: 0.0)')
     parser.add_argument('--prioritized_replay_memory', type=bool, default=True,
                         help='prioritized experience replay')
 
     args = parser.parse_args()
 
+    print("++++++seed:{} updates_per_step:{} project_actions:{} optimize_actions:{}++++++".format(args.seed, args.updates_per_step, args.project_actions, args.optimize_actions))
+
     if args.env_name == '2DProblem':
         env = ManipulateEnv(bEffort=False)
         print(args.action_scale)
+
         env.set_scale(args.action_scale)
         env.set_kd(args.kd)
     else:
@@ -205,7 +208,7 @@ def main():
             if done or total_numsteps % args.num_steps == 0:
                 break
 
-        print("Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
+        print("====>Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
                                                                          episode_reward,time.time()-t_st,t_act,t_project))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
@@ -288,8 +291,6 @@ def main():
             env.stop()
             time.sleep(4.0) #wait for reset
 
-
-            
 
     #-- saves model --
     if args.save_agent:

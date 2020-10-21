@@ -76,6 +76,9 @@ class Policy(nn.Module):
         self.tril_mask = Variable(torch.tril(torch.ones(
             num_outputs, num_outputs), diagonal=-1).unsqueeze(0))
         self.diag_mask = Variable(torch.diag(torch.diag(torch.ones(num_outputs, num_outputs))).unsqueeze(0))
+        
+        #regularizer for covariance matrix
+        self.lam = 0.0001
 
         #regularizer for covariance matrix
         self.lam = 0.001

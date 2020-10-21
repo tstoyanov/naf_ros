@@ -55,7 +55,8 @@ class ManipulateEnv(gym.Env):
         #HOW ugly can you be?
         self.fresh=False
 
-        csv_train = open("/home/quantao/hiqp_logs/constraints.csv", 'w', newline='')
+        csv_train = open("/home/qoyg/hiqp_logs/constraints.csv", 'w', newline='')
+
         self.twriter = csv.writer(csv_train, delimiter=' ')
         self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
 
@@ -120,7 +121,7 @@ class ManipulateEnv(gym.Env):
         self.dq = np.reshape(np.array(data.dq),[data.n_joints,1])
         self.ddq_star = np.reshape(np.array(data.ddq_star),[data.n_joints,1])
         self.observation = np.concatenate([np.squeeze(self.q), np.squeeze(self.dq), self.e-self.goal])
-        #print("obs!")
+
         self.fresh = True
         
     def _constraint_monitor(self, data):
