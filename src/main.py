@@ -35,15 +35,15 @@ def main():
                         help='Should we use an OU process to sample noise?')
     parser.add_argument('--constr_gauss_sample', type=bool, default=False,
                         help='Should we use constrained Gaussian sampling?')
-    parser.add_argument('--noise_scale', type=float, default=0.4, metavar='G',
+    parser.add_argument('--noise_scale', type=float, default=1.2, metavar='G',
                         help='initial noise scale (default: 0.4)')
-    parser.add_argument('--final_noise_scale', type=float, default=0.01, metavar='G',
-                        help='final noise scale (default: 0.05)')
+    parser.add_argument('--final_noise_scale', type=float, default=0.2, metavar='G',
+                        help='final noise scale (default: 0.2)')
     parser.add_argument('--project_actions', type=bool, default=True,##################False
                         help='project to feasible actions only during training')
     parser.add_argument('--optimize_actions', type=bool, default=False,
                         help='add loss to objective')
-    parser.add_argument('--exploration_end', type=int, default=45, metavar='N',
+    parser.add_argument('--exploration_end', type=int, default=100, metavar='N',
                         help='number of episodes with noise (default: 100)')
     parser.add_argument('--seed', type=int, default=54123, metavar='N',
                         help='random seed (default: 4)')
@@ -69,7 +69,7 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--logdir', default="/home/quantao/hiqp_logs",
+    parser.add_argument('--logdir', default="/home/quantao/naf_logs/action_project/",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
                         help='scale applied to the normalized actions (default: 10)')
@@ -146,13 +146,13 @@ def main():
         print("reset took {}".format(time.time() - t_st))
 
         scale = (args.noise_scale - args.final_noise_scale) * max(0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
-        scale = [min(scale,0.4), min(scale,0.2)]
-        print("noise scale is {} {}".format(scale[0],scale[1]))
+        #scale = [min(scale,0.4), min(scale,0.2)]
+        #print("noise scale is {} {}".format(scale[0],scale[1]))
 
         # -- initialize noise (random process N) --
-        ounoise.scale = (args.noise_scale - args.final_noise_scale) * max(
-            0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
+        ounoise.scale = scale
         ounoise.reset()
+        print("noise scale is {}".format(ounoise.scale))
 
         episode_violation = 0
         episode_reward = 0
@@ -242,11 +242,14 @@ def main():
 
                 updates += 1
             print("train took {}".format(time.time() - t_st))
+        #Training end
 
+        #value
         #agent.save_value_funct(
         #    args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
         #    i_episode,
-        #    ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
+        #    ([-1.89, -1.89, -1.89, -2.5, -2.5, -2.5, -1, -1], [1.89, 1.89, 1.89, 2.5, 2.5, 2.5, 1, 1], [5, 5, 5, 5, 5, 5, 5, 5]))
+        
         #runing evaluation episode
         greedy_numsteps = 0
         if i_episode % 2 == 0:
@@ -269,7 +272,6 @@ def main():
 
                 #action = torch.Tensor(
                 #    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
-
                 next_state, reward, done, Ax, bx = env.step(action)
                 visits = np.concatenate((visits, state.numpy(), action, [reward]), axis=None)
                 episode_reward += reward

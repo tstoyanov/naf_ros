@@ -139,7 +139,7 @@ parser.add_argument('--logdir', default="",
                     help='directory where to dump log files')
 args = parser.parse_args()
 
-seeds = [3412]
+seeds = [54123]
 kds = [0.0] #,1.0,10.0,100.0]
 ascales = [1.0]
 uscales = [1, 20]

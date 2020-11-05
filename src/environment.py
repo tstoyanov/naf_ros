@@ -28,7 +28,7 @@ class ManipulateEnv(gym.Env):
         self.bEffort = bEffort
         self.bConstraint = False
 
-        #These seem to be here for the enjoyment of the reader only, what are theyused for?
+        #These seem to be here for the enjoyment of the reader only, what are they used for?
         self.action_space = spaces.Box(low=np.array([-1, -1]), high=np.array([1, 1]), dtype=np.float32)
         obs_low = np.array([-1.89, -1.89, -1.89, -2.5, -2.5, -2.5, -1, -1])
         self.observation_space = spaces.Box(low=obs_low, high=-obs_low, dtype=np.float32)
@@ -75,20 +75,23 @@ class ManipulateEnv(gym.Env):
             hiqp_primitve_srv = rospy.ServiceProxy('/hiqp_joint_velocity_controller/set_primitives', SetPrimitives)
 
         ee_prim = Primitive(name='ee_point',type='point',frame_id='three_dof_planar_eef',visible=True,color=[1,0,0,1],parameters=[0,0,0])
-        goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])       
-        back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,-0.6])
-        front_plane = Primitive(name='front_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[0,1,0,0.6])
-        left_plane = Primitive(name='left_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,-0.6])
-        right_plane = Primitive(name='right_plane',type='plane',frame_id='world',visible=True,color=[0,1,0,0.5],parameters=[1,0,0,0.6])
+        goal_prim = Primitive(name='goal',type='sphere',frame_id='world',visible=True,color=[0,1,0,1],parameters=[self.goal[0],self.goal[1],0,0.02])
+        table_plane = Primitive(name='table_plane',type='plane',frame_id='world',visible=True,color=[0,0,1,0.5],parameters=[0,0,1,0])
+        back_plane = Primitive(name='back_plane',type='plane',frame_id='world',visible=True,color=[0,0,0.5,0.2],parameters=[0,1,0,-0.7])
+        front_plane = Primitive(name='front_plane',type='plane',frame_id='world',visible=True,color=[0,0,0.5,0.2],parameters=[0,1,0,0.7])
+        left_plane = Primitive(name='left_plane',type='plane',frame_id='world',visible=True,color=[0,0,0.5,0.2],parameters=[1,0,0,-0.7])
+        right_plane = Primitive(name='right_plane',type='plane',frame_id='world',visible=True,color=[0,0,0.5,0.2],parameters=[1,0,0,0.7])
         # four corners      
-        corner1 = Primitive(name='corner1',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.6,0.6,0,0.02])
-        corner2 = Primitive(name='corner2',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.6,-0.6,0,0.02])
-        corner3 = Primitive(name='corner3',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.6,-0.6,0,0.02])
-        corner4 = Primitive(name='corner4',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.6,0.6,0,0.02])
+        corner1 = Primitive(name='corner1',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.7,0.7,0,0.02])
+        corner2 = Primitive(name='corner2',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[0.7,-0.7,0,0.02])
+        corner3 = Primitive(name='corner3',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.7,-0.7,0,0.02])
+        corner4 = Primitive(name='corner4',type='sphere',frame_id='world',visible=True,color=[0,0,1,1],parameters=[-0.7,0.7,0,0.02])
         # obstacle
-        obs_cylinder = Primitive(name='obs_cylinder',type='cylinder',frame_id='world',visible=True,color=[1.0,0.0,0.0,0.5],parameters=[0,0,1,0.4,-0.5,0,0.02,0.1])
+        obs_cylinder1 = Primitive(name='obs_cylinder1',type='cylinder',frame_id='world',visible=True,color=[1.0,0.0,0.0,0.5],parameters=[0,0,1,0.3,0.2,0,0.1,0.1])
+        obs_cylinder2 = Primitive(name='obs_cylinder2',type='cylinder',frame_id='world',visible=True,color=[1.0,0.0,0.0,0.5],parameters=[0,0,1,0.2,-0.1,0,0.1,0.1])
+        obs_cylinder3 = Primitive(name='obs_cylinder3',type='cylinder',frame_id='world',visible=True,color=[1.0,0.0,0.0,0.5],parameters=[0,0,1,0.4,-0.4,0,0.1,0.1])
 
-        hiqp_primitve_srv([ee_prim, back_plane, front_plane, left_plane, right_plane, goal_prim, corner1, corner2, corner3, corner4, obs_cylinder])
+        hiqp_primitve_srv([ee_prim, back_plane, front_plane, left_plane, right_plane, goal_prim, corner1, corner2, corner3, corner4, obs_cylinder1, obs_cylinder2, obs_cylinder3])
 
     def set_tasks(self):
         #set the tasks to hiqp
@@ -193,7 +196,8 @@ class ManipulateEnv(gym.Env):
                
     def step(self, action):
         # Execute one time step within the environment
-        a = -action.numpy()[0] * self.action_scale
+        #a = -action.numpy()[0] * self.action_scale
+        a = action.numpy()[0] * self.action_scale
         #act_pub = [a[0], a[1]]
         self.pub.publish(a)
         self.fresh = False
@@ -201,7 +205,7 @@ class ManipulateEnv(gym.Env):
             self.rate.sleep()
 
         success, Ax, bx = qhull(self.A,self.J,self.b)
-        Ax = -Ax
+        #Ax = -Ax
         if(success) :
             self.twriter.writerow(self.episode_trace[-1][0])
             self.twriter.writerow(self.episode_trace[-1][1])
@@ -212,7 +216,8 @@ class ManipulateEnv(gym.Env):
             self.twriter.writerow(self.observation)
             self.twriter.writerow(self.ddq_star)
             self.twriter.writerow(self.rhs)
-            bx = bx - Ax.dot(self.rhs).transpose()
+            #bx = bx - Ax.dot(self.rhs).transpose()
+            bx = bx + Ax.dot(self.rhs).transpose()
             #we should be checking the actiuons were feasible according to previous set of constraints
             feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
             n_infeasible = np.sum(feasible>0.001)

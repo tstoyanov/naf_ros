@@ -15,6 +15,8 @@ def project_action(action,Ax,bx):
     return solution[0]
 
 def project_action_cov(action,Ax,bx,P):
+    #print("Ax=", Ax)
+    #print("bx=", bx)
     if np.linalg.norm(Ax)==0:
         print("infeasible target set")
         return np.zeros(np.shape(action))

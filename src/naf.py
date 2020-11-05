@@ -212,8 +212,8 @@ class NAF:
             axis_list.append(di)
         axis = tuple(axis_list)
         mesh = torch.meshgrid(axis)
-        mesh = torch.stack(mesh,2)
-        mesh = torch.flatten(mesh,start_dim=0,end_dim=1)
+        mesh = torch.stack(mesh,8)
+        mesh = torch.flatten(mesh,start_dim=0,end_dim=7)
         #mesh = mesh.unsqueeze(0)
 
         self.model.eval()
@@ -231,10 +231,12 @@ class NAF:
         cmap = plt.cm.viridis
         cNorm = colors.Normalize(vmin=np.min(Varray), vmax=np.max(Varray))
         scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
-        plt.plot(-0.2,-0.5,'ro')
-        plt.plot([-0.8,0.8,0.8,-0.8,-0.8],[-0.8,-0.8,0.8,0.8,-0.8],'b-',linewidth=2)
+        plt.plot(-0.2,-0.5,'ro')      
+        plt.plot([-0.8,0.8,0.8,-0.8,-0.8],[-0.8,-0.8,0.8,0.8,-0.8],'b-',linewidth=2)    
         grid = mesh.numpy()
-        plt.scatter(grid[:,0],grid[:,1],c=Varray)
+        plt.scatter(grid[:,6],grid[:,7],c=Varray)
+        plt.savefig("state.png")
+        '''
         plt.title("Value function at episode {}".format(episode))
         plt.colorbar()
         plt.tight_layout()
@@ -243,6 +245,7 @@ class NAF:
         figname= base_name+"_ep{}_val.png".format(episode)
         plt.savefig(figname)
         plt.close()
+        '''
 
     def plot_path(self, state, action, ep):
         self.model.eval()
