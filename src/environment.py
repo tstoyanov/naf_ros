@@ -197,8 +197,8 @@ class ManipulateEnv(gym.Env):
                
     def step(self, action):
         # Execute one time step within the environment
-        #a = -action.numpy()[0] * self.action_scale
-        a = action.numpy()[0] * self.action_scale
+        a = -action.numpy()[0] * self.action_scale
+        #a = action.numpy()[0] * self.action_scale
         #act_pub = [a[0], a[1]]
         self.pub.publish(a)
         self.fresh = False
@@ -206,7 +206,7 @@ class ManipulateEnv(gym.Env):
             self.rate.sleep()
 
         success, Ax, bx = qhull(self.A,self.J,self.b)
-        #Ax = -Ax
+        Ax = -Ax
         if(success) :
             self.twriter.writerow(self.episode_trace[-1][0])
             self.twriter.writerow(self.episode_trace[-1][1])
@@ -217,7 +217,7 @@ class ManipulateEnv(gym.Env):
             self.twriter.writerow(self.observation)
             self.twriter.writerow(self.ddq_star)
             self.twriter.writerow(self.rhs)
-            #bx = bx - Ax.dot(self.rhs).transpose()
+            bx = bx - Ax.dot(self.rhs).transpose()
             bx = bx + Ax.dot(self.rhs).transpose()
             #we should be checking the actiuons were feasible according to previous set of constraints
             feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
