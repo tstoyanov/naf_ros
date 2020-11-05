@@ -218,7 +218,7 @@ class ManipulateEnv(gym.Env):
             self.twriter.writerow(self.ddq_star)
             self.twriter.writerow(self.rhs)
             bx = bx - Ax.dot(self.rhs).transpose()
-            bx = bx + Ax.dot(self.rhs).transpose()
+            #bx = bx + Ax.dot(self.rhs).transpose()
             #we should be checking the actiuons were feasible according to previous set of constraints
             feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
             n_infeasible = np.sum(feasible>0.001)
