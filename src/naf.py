@@ -16,6 +16,13 @@ import numpy
 import pickle
 import quad
 
+from mpl_toolkits.mplot3d import *
+from faces import Faces
+from scipy.spatial import HalfspaceIntersection
+from scipy.spatial import ConvexHull
+from scipy.optimize import linprog
+
+
 #@profile
 def MSELoss(input, target):
     return torch.sum((input - target)**2) / input.data.nelement()
@@ -268,4 +275,75 @@ class NAF:
 
         figname= 'path_{}_{}'.format(ep, '.png')
         plt.savefig(figname)
+        plt.close()
+        
+    def plot_state_action_pair(self, state, action, action_naf, Ax, bx, episode, step):
+        self.model.eval()
+        _, Q, _, _ = self.model((Variable(torch.cat(state),0), Variable(torch.cat(action),0)))
+        self.model.train()
+        sx, sy = torch.cat(state).numpy().T[-2:]
+        ax, ay = torch.cat(action).numpy().T
+        ax_naf, ay_naf = torch.cat(action_naf).numpy().T
+
+        qCat = []
+        for j in range(len(Q.data.numpy())):
+            qCat.append(Q.data.numpy()[j][0])
+                    
+        # plot state
+        fig = plt.figure()
+        ax3d = fig.gca(projection='3d')
+        bar = ax3d.scatter(sx, sy)
+        #ax3d.scatter3D(sx[0], sy[0], sz[0], color='red', marker='^')
+        ax3d.set_xlabel('error_x', fontsize=10, labelpad=20)
+        ax3d.set_ylabel('error_y', fontsize=10, labelpad=20) 
+        ax3d.set_xlim(-0.5,0.5)
+        ax3d.set_ylim(-0.5,0.5)
+
+        plt.title("Trajectory episode {} step {}".format(episode, step))
+
+        
+        # plot projected action
+        ax3d.quiver(sx[0], sy[0], ax[0]/10.0, ay[0]/10.0, color='blue')
+        
+        # plot naf action
+        ax3d.quiver(sx[0], sy[0], ax_naf[0]/10.0, ay_naf[0]/10.0, color='red')        
+        fig.colorbar(bar,shrink=0.5)
+        
+        # plot feasible action space
+        #construct an LP to find a feasible point in upper space
+        num_constraints = bx.shape[1]
+        norm_vector = np.reshape(np.linalg.norm(Ax, axis=1), (num_constraints, 1))
+        c = np.zeros((2+1,))
+        c[-1] = -1
+        A_up = np.hstack((Ax, norm_vector))
+        # a feasible point that is furthest from constraints solution
+        upper_feasible = linprog(c, A_ub=A_up, b_ub=bx, bounds=(None, None))
+        if upper_feasible.success:
+            feasible_point = upper_feasible.x[:-1]
+        else:
+            return
+            
+        halfspaces = np.hstack((Ax,np.reshape(-bx,(num_constraints,1))))
+        #feasible_point = np.array([0.3, 0.3, 0.3])
+        hs = HalfspaceIntersection(halfspaces, feasible_point)
+        verts = hs.intersections
+        verts = np.array([verts[:,0]+sx[0], verts[:,1]+sy[0]]).T
+        hull = ConvexHull(verts)
+        simplices = hull.simplices
+        #print("verts=", verts)
+        org_triangles = [verts[s] for s in simplices]
+        f = Faces(org_triangles)
+        g = f.simplify()
+        #print("g=", g)
+        facecolors = list(map("C{}".format, range(len(g))))       
+        pc = art3d.Poly3DCollection(g, facecolor='w', edgecolor="k", alpha=0.2)
+        ax3d.add_collection3d(pc)       
+        ax3d.quiver(0, 0, 0, 1, 0, 0, arrow_length_ratio=0.1, color='r')
+        ax3d.quiver(0, 0, 0, 0, 1, 0, arrow_length_ratio=0.1, color='g')
+        ax3d.quiver(0, 0, 0, 0, 0, 1, arrow_length_ratio=0.1, color='b')
+        
+        # show and save
+        #plt.show()
+        fig = 'path{}_{}.png'.format(episode, step)
+        plt.savefig(fig, dpi=300)
         plt.close()

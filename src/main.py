@@ -132,6 +132,7 @@ def main():
             memory.memory = pickle.load(input)
             memory.position = len(memory)
     
+    reaches = []
     violations = []
     rewards = []
     total_numsteps = 0
@@ -149,14 +150,15 @@ def main():
         print("reset took {}".format(time.time() - t_st))
 
         scale = (args.noise_scale - args.final_noise_scale) * max(0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
-        scale = [min(scale,0.4), min(scale,0.2)]
-        print("noise scale is {} {}".format(scale[0],scale[1]))
+        #scale = [min(scale,0.4), min(scale,0.2)]
 
         # -- initialize noise (random process N) --
         ounoise.scale = (args.noise_scale - args.final_noise_scale) * max(
             0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
         ounoise.reset()
+        print("noise scale is {}".format(ounoise.scale))
 
+        episode_reached = 0
         episode_violation = 0
         episode_reward = 0
         visits = []
@@ -165,6 +167,7 @@ def main():
 
         t_project = 0
         t_act = 0
+        step = 0
         while True:
             # -- action selection, observation and store transition --
             if args.ou_noise:
@@ -198,6 +201,10 @@ def main():
             next_state = torch.Tensor([next_state])
             Ax_trace = torch.Tensor(Ax_prev)
             bx_trace = torch.Tensor([bx_prev])
+            
+            
+            #step += 1
+            #agent.plot_state_action_pair([state], [action], [action_naf], Ax, bx, i_episode, step)
 
             Ax_prev = Ax
             bx_prev = bx[0]
@@ -210,15 +217,18 @@ def main():
             if done or total_numsteps % args.num_steps == 0 or env.bConstraint:
                 if env.bConstraint:
                     episode_violation += 1
+                elif done:
+                    episode_reached += 1
                 break
 
         print("====>Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
                                                                          episode_reward,time.time()-t_st,t_act,t_project))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
-        train_writer.writerow(np.concatenate(([episode_reward],[episode_violation],visits),axis=None))
+        train_writer.writerow(np.concatenate(([episode_reward],[episode_violation],[episode_reached],visits),axis=None))
         rewards.append(episode_reward)
         violations.append(episode_violation)
+        reaches.append(episode_reached)
         #trying out this?
         env.stop()
         t_st = time.time()
@@ -250,9 +260,10 @@ def main():
         #    args.logdir + '/kd{}_sd{}_as{}_us_{}'.format(args.kd, args.seed, args.action_scale, args.updates_per_step),
         #    i_episode,
         #    ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
+        
         #runing evaluation episode
         greedy_numsteps = 0
-        if i_episode % 2 == 0:
+        if i_episode > 90:
             #state = env.reset()
             if time.time() - t_st < 4:
                 print("waiting for reset...")
