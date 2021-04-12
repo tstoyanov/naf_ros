@@ -16,6 +16,8 @@ import csv
 
 #import files...
 from naf import NAF
+from ddpg import DDPG
+from reinforce import REINFORCE
 from ounoise import OUNoise
 from replay_memory import Transition, ReplayMemory
 from prioritized_replay_memory import PrioritizedReplayMemory
@@ -25,6 +27,8 @@ import quad
 
 def main():
     parser = argparse.ArgumentParser(description='NAF nullspace learner')
+    parser.add_argument('--algo', default='NAF',
+                        help='algorithm to use: NAF | DDPG | REINFORCE')
     parser.add_argument('--env_name', default="2DProblem",
                         help='name of the environment')
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
@@ -61,7 +65,7 @@ def main():
                         help='increment this externally to re-run same parameters multiple times')
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 1000000)')
-    parser.add_argument('--save_agent', type=bool, default=True,
+    parser.add_argument('--save_agent', type=bool, default=False,
                         help='save model to file')
     parser.add_argument('--train_model', type=bool, default=True,
                         help='Training or run')
@@ -80,7 +84,7 @@ def main():
 
     args = parser.parse_args()
 
-    print("++++++seed:{} updates_per_step:{} project_actions:{} optimize_actions:{}++++++".format(args.seed, args.updates_per_step, args.project_actions, args.optimize_actions))
+    print("++++++seed:{} algo:{} updates_per_step:{} project_actions:{} optimize_actions:{}++++++".format(args.seed, args.algo, args.updates_per_step, args.project_actions, args.optimize_actions))
 
     if args.env_name == '2DProblem':
         env = ManipulateEnv(bEffort=False)
@@ -112,8 +116,12 @@ def main():
     np.random.seed(args.seed)
 
     # -- initialize agent --
-    agent = NAF(args.gamma, args.tau, args.hidden_size,
-                env.observation_space.shape[0], env.action_space)
+    if args.algo == "NAF":
+        agent = NAF(args.gamma, args.tau, args.hidden_size, env.observation_space.shape[0], env.action_space)
+    elif args.algo == "DDPG":
+        agent = DDPG(args.gamma, args.tau, args.hidden_size, env.observation_space.shape[0], env.action_space)
+    else:
+        agent = REINFORCE(args.hidden_size, env.observation_space.shape[0], env.action_space)    
 
     # -- declare memory buffer and random process N
     if args.prioritized_replay_memory:
@@ -138,13 +146,12 @@ def main():
     total_numsteps = 0
     updates = 0
     
-    #env.init_ros()
     env.stop()
-
     t_start = time.time()
 
     for i_episode in range(args.num_episodes+1):
         # -- reset environment for every episode --
+        print('++++++++++++++++++++++++++i_episode+++++++++++++++++++++++++++++:', i_episode)
         t_st = time.time()
         state = torch.Tensor([env.start()])
         print("reset took {}".format(time.time() - t_st))
@@ -183,7 +190,11 @@ def main():
                 else:
                     #noise-free run
                     action = agent.select_proj_action(state,Ax_prev,bx_prev)
-
+            
+            if args.algo == "REINFORCE":
+                action, log_prob, entropy = agent.select_action(state)
+                next_state, reward, done, _ = env.step(action)
+                
             # env step
             t_st0 = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
@@ -246,7 +257,10 @@ def main():
                 else:
                     transitions = memory.sample(args.batch_size)
                 batch = Transition(*zip(*transitions))
-                value_loss, reg_loss = agent.update_parameters(batch,optimize_feasible_mu=args.optimize_actions)
+                if args.algo == "NAF":
+                    value_loss, reg_loss = agent.update_parameters(batch,optimize_feasible_mu=args.optimize_actions)
+                else:
+                    value_loss, reg_loss = agent.update_parameters(batch)
 
                 writer.add_scalar('loss/full', value_loss, updates)
                 if args.optimize_actions:
