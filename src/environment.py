@@ -128,8 +128,8 @@ class ManipulateEnv(gym.Env):
         redundancy = Task(name='full_pose',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefFullPose', '0.3', '-0.8', '-1.3'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        #hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,cylinder_avoidance1,cylinder_avoidance2,cylinder_avoidance3,rl_task,redundancy])
-        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
+        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,cylinder_avoidance1,cylinder_avoidance2,cylinder_avoidance3,rl_task,redundancy])
+        #hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
     def _next_observation(self, data):
         self.e = np.array(data.e)
