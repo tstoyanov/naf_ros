@@ -56,7 +56,7 @@ class ManipulateEnv(gym.Env):
         #HOW ugly can you be?
         self.fresh=False
 
-        csv_train = open("/home/qoyg/hiqp_logs/constraints.csv", 'w', newline='')
+        csv_train = open("/home/quantao/hiqp_logs/constraints.csv", 'w', newline='')
 
         self.twriter = csv.writer(csv_train, delimiter=' ')
         self.episode_trace = [(np.identity(self.action_space.shape[0]),self.action_space.high,0)]
@@ -128,7 +128,8 @@ class ManipulateEnv(gym.Env):
         redundancy = Task(name='full_pose',priority=2,visible=True,active=True,monitored=True,
                           def_params=['TDefFullPose', '0.3', '-0.8', '-1.3'],
                           dyn_params=['TDynPD', '1.0', '2.0'])
-        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,cylinder_avoidance1,cylinder_avoidance2,cylinder_avoidance3,rl_task,redundancy])
+        #hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,cylinder_avoidance1,cylinder_avoidance2,cylinder_avoidance3,rl_task,redundancy])
+        hiqp_task_srv([cage_front,cage_back,cage_left,cage_right,rl_task,redundancy])
 
     def _next_observation(self, data):
         self.e = np.array(data.e)
@@ -145,8 +146,8 @@ class ManipulateEnv(gym.Env):
         self.fresh = True
         
     def _constraint_monitor(self, data):
-        violate_thre = 0.001
-        penalty_scale = 100
+        violate_thre = 0.01
+        penalty_scale = 1.0
                 
         for task in data.task_measures:
             if task.task_name == "ee_cage_back" and task.e[0] < 0:
@@ -233,12 +234,11 @@ class ManipulateEnv(gym.Env):
             self.twriter.writerow(self.observation)
             self.twriter.writerow(self.ddq_star)
             self.twriter.writerow(self.rhs)
-            bx = bx - Ax.dot(self.rhs).transpose()
+            bx = bx - Ax.dot(self.rhs).transpose() 
             #we should be checking the actiuons were feasible according to previous set of constraints
             feasible = self.episode_trace[-1][0].dot(action.numpy()[0] * self.action_scale) - self.episode_trace[-1][1]
             n_infeasible = np.sum(feasible>0.001)
             self.episode_trace.append((Ax,bx,n_infeasible))
-            #print(feasible)
 
         if self.bConstraint:
             done = True

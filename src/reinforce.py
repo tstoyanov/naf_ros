@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn.utils as utils
-import torchvision.transforms as T
 from torch.autograd import Variable
 
 pi = Variable(torch.FloatTensor([math.pi])).cuda()
@@ -68,5 +67,5 @@ class REINFORCE:
 		
         self.optimizer.zero_grad()
         loss.backward()
-        utils.clip_grad_norm(self.model.parameters(), 40)
+        utils.clip_grad_norm_(self.model.parameters(), 40)
         self.optimizer.step()

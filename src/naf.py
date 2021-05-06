@@ -17,7 +17,7 @@ import pickle
 import quad
 
 from mpl_toolkits.mplot3d import *
-from faces import Faces
+#from faces import Faces
 from scipy.spatial import HalfspaceIntersection
 from scipy.spatial import ConvexHull
 from scipy.optimize import linprog

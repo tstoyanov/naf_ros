@@ -17,7 +17,6 @@ import csv
 #import files...
 from naf import NAF
 from ddpg import DDPG
-from reinforce import REINFORCE
 from ounoise import OUNoise
 from replay_memory import Transition, ReplayMemory
 from prioritized_replay_memory import PrioritizedReplayMemory
@@ -28,7 +27,7 @@ import quad
 def main():
     parser = argparse.ArgumentParser(description='NAF nullspace learner')
     parser.add_argument('--algo', default='NAF',
-                        help='algorithm to use: NAF | DDPG | REINFORCE')
+                        help='algorithm to use: NAF | DDPG')
     parser.add_argument('--env_name', default="2DProblem",
                         help='name of the environment')
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
@@ -73,7 +72,7 @@ def main():
                         help='load model from file')
     parser.add_argument('--load_exp', type=bool, default=False,
                         help='load saved experience')
-    parser.add_argument('--logdir', default="/home/qoyg/hiqp_logs",
+    parser.add_argument('--logdir', default="/home/quantao/hiqp_logs",
                         help='directory where to dump log files')
     parser.add_argument('--action_scale', type=float, default=1.0, metavar='N',
                         help='scale applied to the normalized actions (default: 1.0)')
@@ -102,14 +101,10 @@ def main():
     if not path.exists():
         raise argparse.ArgumentTypeError("Parameter {} is not a valid path".format(path))
 
-    csv_train = open(args.logdir+'/'+basename+'_train.csv', 'w',
-              newline='')
+    csv_train = open(args.logdir+'/'+basename+'_train.csv', 'w', newline='')
     train_writer = csv.writer(csv_train, delimiter=' ')
-
-    csv_test = open(args.logdir+'/'+basename+'_test.csv', 'w',
-                  newline='')
+    csv_test = open(args.logdir+'/'+basename+'_test.csv', 'w', newline='')
     test_writer = csv.writer(csv_test, delimiter=' ')
-
 
     env.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -120,8 +115,6 @@ def main():
         agent = NAF(args.gamma, args.tau, args.hidden_size, env.observation_space.shape[0], env.action_space)
     elif args.algo == "DDPG":
         agent = DDPG(args.gamma, args.tau, args.hidden_size, env.observation_space.shape[0], env.action_space)
-    else:
-        agent = REINFORCE(args.hidden_size, env.observation_space.shape[0], env.action_space)    
 
     # -- declare memory buffer and random process N
     if args.prioritized_replay_memory:
@@ -143,7 +136,6 @@ def main():
     reaches = []
     violations = []
     rewards = []
-    total_numsteps = 0
     updates = 0
     
     env.stop()
@@ -160,10 +152,11 @@ def main():
         #scale = [min(scale,0.4), min(scale,0.2)]
 
         # -- initialize noise (random process N) --
-        ounoise.scale = (args.noise_scale - args.final_noise_scale) * max(
-            0, args.exploration_end - i_episode) / args.exploration_end + args.final_noise_scale
+        ounoise.scale = scale
         ounoise.reset()
         print("noise scale is {}".format(ounoise.scale))
+
+        episode_numsteps = 0
 
         episode_reached = 0
         episode_violation = 0
@@ -172,9 +165,6 @@ def main():
         Ax_prev = np.identity(env.action_space.shape[0])
         bx_prev = env.action_space.high
 
-        t_project = 0
-        t_act = 0
-        step = 0
         while True:
             # -- action selection, observation and store transition --
             if args.ou_noise:
@@ -190,20 +180,12 @@ def main():
                 else:
                     #noise-free run
                     action = agent.select_proj_action(state,Ax_prev,bx_prev)
-            
-            if args.algo == "REINFORCE":
-                action, log_prob, entropy = agent.select_action(state)
-                next_state, reward, done, _ = env.step(action)
                 
             # env step
-            t_st0 = time.time()
             next_state, reward, done, Ax, bx = env.step(action)
-            t_act += time.time() - t_st0
-            #print("act took {}".format(time.time() - t_st0))
 
             visits = np.concatenate((visits,state.numpy(),args.action_scale*action,[reward]),axis=None)
             #env.render()
-            total_numsteps += 1
             episode_reward += reward
 
             action = torch.Tensor(action)
@@ -212,41 +194,36 @@ def main():
             next_state = torch.Tensor([next_state])
             Ax_trace = torch.Tensor(Ax_prev)
             bx_trace = torch.Tensor([bx_prev])
-            
-            
-            #step += 1
+                   
+            episode_numsteps += 1
             #agent.plot_state_action_pair([state], [action], [action_naf], Ax, bx, i_episode, step)
 
             Ax_prev = Ax
             bx_prev = bx[0]
 
-            #print('reward:', reward)
             memory.push(state, action, mask, next_state, reward, Ax_trace, bx_trace)
 
             state = next_state
 
-            if done or total_numsteps % args.num_steps == 0 or env.bConstraint:
+            if done or episode_numsteps == args.num_steps or env.bConstraint:
                 if env.bConstraint:
                     episode_violation += 1
                 elif done:
                     episode_reached += 1
                 break
 
-        print("====>Train Episode: {}, total numsteps: {}, reward: {}, time: {} act: {} project: {}".format(i_episode, total_numsteps,
-                                                                         episode_reward,time.time()-t_st,t_act,t_project))
+        print("====>Train Episode: {}, episode_numsteps: {}, reward: {}, time: {}".format(i_episode,episode_numsteps,episode_reward,time.time()-t_st))
         print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
         train_writer.writerow(np.concatenate(([episode_reward],[episode_violation],[episode_reached],visits),axis=None))
         rewards.append(episode_reward)
         violations.append(episode_violation)
         reaches.append(episode_reached)
-        #trying out this?
+
         env.stop()
-        t_st = time.time()
 
         #Training models
         if len(memory) >= args.batch_size and args.train_model:
-            #env.reset()
             print("Training model")
             #env.step(torch.Tensor([[0,0]]))
 
@@ -276,9 +253,7 @@ def main():
         #    ([-1.0, -1.0], [1.0, 1.0], [300, 300]))
         
         #runing evaluation episode
-        greedy_numsteps = 0
-        if i_episode > 90:
-            #state = env.reset()
+        if i_episode > 10 and i_episode%2 == 0:
             if time.time() - t_st < 4:
                 print("waiting for reset...")
                 time.sleep(4.0)
@@ -287,6 +262,7 @@ def main():
             Ax_prev = np.identity(env.action_space.shape[0])
             bx_prev = env.action_space.high
 
+            greedy_numsteps = 0
             episode_violation = 0
             episode_reward = 0
             visits = []
@@ -295,11 +271,8 @@ def main():
                 if args.project_actions:
                     action = agent.select_proj_action(state, Ax_prev, bx_prev)
 
-                #action = torch.Tensor(
-                #    [quad.project_action(env.action_scale * action.numpy()[0], Ax_prev, bx_prev) / env.action_scale])
-
                 next_state, reward, done, Ax, bx = env.step(action)
-                visits = np.concatenate((visits, state.numpy(), action, [reward]), axis=None)
+                visits = np.concatenate((visits, state.numpy(), args.action_scale*action, [reward]), axis=None)
                 episode_reward += reward
                 greedy_numsteps += 1
                 Ax_prev = Ax
@@ -307,7 +280,7 @@ def main():
 
                 state = torch.Tensor([next_state])
 
-                if done or greedy_numsteps % args.num_steps == 0 or env.bConstraint:
+                if done or greedy_numsteps == args.num_steps or env.bConstraint:
                     if env.bConstraint:
                         episode_violation += 1
                     break
@@ -318,13 +291,12 @@ def main():
             rewards.append(episode_reward)
             violations.append(episode_violation)
 
-            print("Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])))
+            print("Episode: {}, greedy_numsteps: {}, reward: {}, average reward: {}".format(i_episode, greedy_numsteps, rewards[-1], np.mean(rewards[-10:])))
             print('Time per episode: {} s'.format((time.time() - t_start) / (i_episode+1)))
             print("Percentage of actions in constraint violation was {}".format(np.sum([env.episode_trace[i][2]>0 for i in range(len(env.episode_trace))])))
 
             env.stop()
             time.sleep(4.0) #wait for reset
-
 
     #-- saves model --
     if args.save_agent:

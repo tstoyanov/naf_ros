@@ -14,6 +14,8 @@ from pathlib import Path
 
 from reinforce import REINFORCE
 from environment import ManipulateEnv
+import quad
+
 
 
 def main():
@@ -34,8 +36,8 @@ def main():
                         help='batch size (default: 512)')
     parser.add_argument('--num_steps', type=int, default=300, metavar='N',
                         help='max episode length (default: 300)')
-    parser.add_argument('--num_episodes', type=int, default=2000, metavar='N',
-                        help='number of episodes (default: 2000)')
+    parser.add_argument('--num_episodes', type=int, default=1000, metavar='N',
+                        help='number of episodes (default: 1000)')
     parser.add_argument('--hidden_size', type=int, default=128, metavar='N',
                         help='hidden size (default: 128)')
     parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
@@ -87,22 +89,33 @@ def main():
         print('++++++++++++++++++++++++++i_episode+++++++++++++++++++++++++++++:', i_episode)
         state = torch.Tensor([env.start()])
         
+        Ax_prev = np.identity(env.action_space.shape[0])
+        bx_prev = env.action_space.high
+        
         episode_numsteps = 0
         entropies = []
         log_probs = []
         rewards = []
         while True:
-            # -- action selection, observation and store transition --   
-            action, log_prob, entropy = agent.select_action(state)               
+            # -- action selection --   
+            action, log_prob, entropy = agent.select_action(state)
             action = action.cpu()
-            
-            next_state, reward, done, _, _ = env.step(action)
+
+            # -- project action --
+            if False:
+                action = quad.project_action(action.numpy()[0], Ax_prev, bx_prev)
+                action = torch.Tensor([action])
+                
+            next_state, reward, done, Ax, bx = env.step(action)
 
             entropies.append(entropy)
             log_probs.append(log_prob)
             rewards.append(reward)
 
             state = torch.Tensor([next_state])
+            
+            Ax_prev = Ax
+            bx_prev = bx[0]
             
             episode_numsteps += 1
             if done or episode_numsteps==args.num_steps:
